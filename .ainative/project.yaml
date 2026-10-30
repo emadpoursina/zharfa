@@ -1,0 +1,14 @@
+# .ainative/project.yaml — Zharfa (live project manifest; source: AiNative methodology)
+#
+# `validation_commands` are run by the tester state for managed work. The
+# worker never runs them. Commands below prove the Demo 1 scaffold builds.
+
+validation_commands:
+  # Frontend (React + TypeScript + Vite): install deps, then a production build.
+  - npm --prefix frontend install --no-audit --no-fund
+  - npm --prefix frontend run build
+  # Backend API (ASP.NET Core, net10.0): compile. Requires the .NET 10 SDK.
+  - dotnet build backend/Zharfa.Api/Zharfa.Api.csproj
+  # Desktop shell (WPF + WebView2, net10.0-windows): compiles on any OS via
+  # EnableWindowsTargeting; running requires Windows + WebView2 Runtime.
+  - dotnet build desktop/Zharfa.Desktop/Zharfa.Desktop.csproj

@@ -1,0 +1,36 @@
+# Scratch / working notes — never version controlled
+scratch/
+
+# Environment and secrets
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+appsettings.*.Local.json
+
+# Dependencies
+node_modules/
+.venv/
+venv/
+__pycache__/
+*.pyc
+
+# Build output
+dist/
+build/
+out/
+bin/
+obj/
+*.tsbuildinfo
+*.egg-info/
+
+# Logs and OS noise
+*.log
+logs/
+.DS_Store
+Thumbs.db
+
+# Editors
+.vscode/
+.idea/

@@ -1,0 +1,13 @@
+@import "tailwindcss";
+
+/* Persian-first RTL defaults (Demo 1 is RTL-only; English is deferred). */
+html {
+  direction: rtl;
+}
+
+body {
+  margin: 0;
+  font-family: Vazirmatn, "Segoe UI", Tahoma, system-ui, sans-serif;
+  background-color: #ffffff;
+  color: #111827;
+}
