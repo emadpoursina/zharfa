@@ -34,3 +34,10 @@ Thumbs.db
 # Editors
 .vscode/
 .idea/
+
+# Antigravity harness run dirs (created by the delegating worker session)
+.agent/
+
+# Tester evidence bundles — local/CI-only, never committed
+specs/*/evidence/
+specs/*/evidence.md

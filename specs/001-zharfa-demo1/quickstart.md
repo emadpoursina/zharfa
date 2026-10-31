@@ -35,6 +35,12 @@ Validates the five Demo 1 observable checks (PRD §4). References: [contracts/](
 2. Grep frontend bundle, repo, logs for key material → zero hits.
 3. Direct-API admin call as manager → denied server-side.
 
+#### Direct-API negative authz verification (T025)
+- Anonymous: `curl -i -s http://localhost:5080/api/admin/provider` → `401 Unauthorized` (`{"message":"احراز هویت انجام نشده است یا نشست منقضی شده است."}`)
+- Manager cookie: `curl -i -s -b "zharfa_session=$MANAGER_COOKIE" http://localhost:5080/api/admin/provider` → `403 Forbidden` (`{"message":"شما دسترسی لازم برای انجام این عملیات را ندارید."}`)
+- Admin cookie: `curl -i -s -b "zharfa_session=$ADMIN_COOKIE" http://localhost:5080/api/admin/provider` → `200 OK` (`{"name":"...","endpoint":"...","model":"...","configured":true|false}`)
+- Key absence verification: `curl -s -b "zharfa_session=$ADMIN_COOKIE" http://localhost:5080/api/admin/provider | grep -i "apikey\|api_key"` → zero hits (no key material exposed).
+
 ### 5. Clean install + reconciliation + print (covers check 5) — US6 [DOCKER-HOST]
 
 1. From clean state run README Compose install → full flow works, no Mabna access, no manual DB edits.

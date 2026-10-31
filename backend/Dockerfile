@@ -11,5 +11,7 @@ RUN dotnet publish backend/Zharfa.Api/Zharfa.Api.csproj -c Release -o /app/publi
 FROM mcr.microsoft.com/dotnet/aspnet:10.0 AS runtime
 WORKDIR /app
 COPY --from=build /app/publish .
+# Ship SQL migrations and seed scripts for forward-only database migration at API startup
+COPY db/ /app/db/
 EXPOSE 8080
 ENTRYPOINT ["dotnet", "Zharfa.Api.dll"]

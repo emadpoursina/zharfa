@@ -18,9 +18,9 @@
 
 **Purpose**: Project initialization and basic structure
 
-- [ ] T001 Add Npgsql EF Core data-access packages to backend/Zharfa.Api/Zharfa.Api.csproj
-- [ ] T002 Wire migration runner into API startup in backend/Zharfa.Api/Program.cs (forward-only db/migrations, no manual DB edits)
-- [ ] T003 [P] Scaffold Persian login + demo-data banner shell in frontend/src/pages/ + frontend/src/components/ per plan.md structure
+- [X] T001 Add Npgsql EF Core data-access packages to backend/Zharfa.Api/Zharfa.Api.csproj
+- [X] T002 Wire migration runner into API startup in backend/Zharfa.Api/Program.cs (forward-only db/migrations, no manual DB edits)
+- [X] T003 [P] Scaffold Persian login + demo-data banner shell in frontend/src/pages/ + frontend/src/components/ per plan.md structure
 
 ---
 
@@ -30,12 +30,12 @@
 
 **⚠️ CRITICAL**: No user story work can begin until this phase is complete
 
-- [ ] T004 Create canonical + reserved tables migration db/migrations/0001_init_canonical.sql (Product, ProductCategory, Customer, SalesInvoice, SalesInvoiceItem with qty <> 0 CHECK and line-discount CHECKs, Warehouse, StockMovement, Receipt with amount > 0 CHECK, User/Role, AuditLog append-only, empty SourceRecord/SyncJob/SyncLog)
-- [ ] T005 [P] Create KPI views migration db/migrations/0002_kpi_views.sql (v_sales_overview + v_sales_lines with sales_revenue formula comment, v_inventory_alerts with threshold comment, v_receivables + v_receivable_rows with cash_received/receivables_balance comments)
-- [ ] T006 [P] Seed synthetic multi-month demo data in db/seed/ (sales across ≥3 months with returns/discounts, healthy/low/out-of-stock states, varied balances + opening_balance, seeded manager+admin users with hashed passwords, demonstration-data labeling note)
-- [ ] T007 Implement Persian session auth + server-side Manager/Admin enforcement in backend/Zharfa.Api/Controllers/AuthController.cs + auth middleware (seeded accounts, hashed passwords, no self-registration)
-- [ ] T008 Implement Persian error envelope + no-secret logging guard in backend/Zharfa.Api/Program.cs (no secret/stack/key material in responses or logs)
-- [ ] T009 Implement Jalali period mapping + single-category predicate helpers in backend/Zharfa.Api/Analytics/PeriodFilters.cs (Jalali month presets + custom range → Gregorian range; MoM = selected Jalali month vs previous)
+- [X] T004 Create canonical + reserved tables migration db/migrations/0001_init_canonical.sql (Product, ProductCategory, Customer, SalesInvoice, SalesInvoiceItem with qty <> 0 CHECK and line-discount CHECKs, Warehouse, StockMovement, Receipt with amount > 0 CHECK, User/Role, AuditLog append-only, empty SourceRecord/SyncJob/SyncLog)
+- [X] T005 [P] Create KPI views migration db/migrations/0002_kpi_views.sql (v_sales_overview + v_sales_lines with sales_revenue formula comment, v_inventory_alerts with threshold comment, v_receivables + v_receivable_rows with cash_received/receivables_balance comments)
+- [X] T006 Seed synthetic multi-month demo data in db/seed/ (sales across ≥3 months with returns/discounts, healthy/low/out-of-stock states, varied balances + opening_balance, seeded manager+admin users with hashed passwords, demonstration-data labeling note)
+- [X] T007 Implement Persian session auth + server-side Manager/Admin enforcement in backend/Zharfa.Api/Controllers/AuthController.cs + auth middleware (seeded accounts, hashed passwords, no self-registration)
+- [X] T008 Implement Persian error envelope + no-secret logging guard in backend/Zharfa.Api/Program.cs (no secret/stack/key material in responses or logs)
+- [X] T009 Implement Jalali period mapping + single-category predicate helpers in backend/Zharfa.Api/Analytics/PeriodFilters.cs (Jalali month presets + custom range → Gregorian range; MoM = selected Jalali month vs previous)
 
 **Checkpoint**: Foundation ready - user story implementation can now begin in parallel
 
@@ -47,10 +47,10 @@
 
 **Independent Test**: Seed multi-month data; select month + category; totals/MoM/trend/top-5s and supporting rows match v_sales_overview/v_sales_lines; Persian RTL with Jalali dates and demo-data label.
 
-- [ ] T010 [P] [US1] Implement sales KPI service over approved views in backend/Zharfa.Api/Analytics/SalesAnalytics.cs (sales_revenue = SUM(qty*unit_price-line_discount), MoM, trend buckets, top 5 products/customers; never equate with cash)
-- [ ] T011 [US1] Implement sales endpoints in backend/Zharfa.Api/Controllers/SalesController.cs (GET /api/sales/overview + GET /api/sales/lines per contracts/api.md; manager/admin only; demoData:true)
-- [ ] T012 [US1] Build sales dashboard page + filters in frontend/src/pages/Dashboard.tsx (month presets + custom range + single category; every number + row updates consistently)
-- [ ] T013 [US1] Build sales metric cards + supporting tables in frontend/src/components/SalesCards.tsx (Persian RTL, Jalali dates, Persian numbers/currency, demo-data label)
+- [X] T010 [P] [US1] Implement sales KPI service over approved views in backend/Zharfa.Api/Analytics/SalesAnalytics.cs (sales_revenue = SUM(qty*unit_price-line_discount), MoM, trend buckets, top 5 products/customers; never equate with cash)
+- [X] T011 [US1] Implement sales endpoints in backend/Zharfa.Api/Controllers/SalesController.cs (GET /api/sales/overview + GET /api/sales/lines per contracts/api.md; manager/admin only; demoData:true)
+- [X] T012 [US1] Build sales dashboard page + filters in frontend/src/pages/Dashboard.tsx (month presets + custom range + single category; every number + row updates consistently)
+- [X] T013 [US1] Build sales metric cards + supporting tables in frontend/src/components/SalesCards.tsx (Persian RTL, Jalali dates, Persian numbers/currency, demo-data label)
 
 **Checkpoint**: At this point, User Story 1 should be fully functional and testable independently
 
@@ -62,9 +62,9 @@
 
 **Independent Test**: Seed healthy/low/out-of-stock states; both lists + counts + rows match v_inventory_alerts and update with category filter.
 
-- [ ] T014 [P] [US2] Implement inventory KPI service in backend/Zharfa.Api/Analytics/InventoryAnalytics.cs (single server-side low_stock_threshold with documented default; low vs out-of-stock split; batch flag only)
-- [ ] T015 [US2] Implement inventory endpoint in backend/Zharfa.Api/Controllers/InventoryController.cs (GET /api/inventory/alerts per contracts/api.md; manager/admin only)
-- [ ] T016 [US2] Build inventory alerts UI in frontend/src/components/InventoryAlerts.tsx (two lists, counts, supporting rows, Persian RTL + demo-data label)
+- [X] T014 [P] [US2] Implement inventory KPI service in backend/Zharfa.Api/Analytics/InventoryAnalytics.cs (single server-side low_stock_threshold with documented default; low vs out-of-stock split; batch flag only)
+- [X] T015 [US2] Implement inventory endpoint in backend/Zharfa.Api/Controllers/InventoryController.cs (GET /api/inventory/alerts per contracts/api.md; manager/admin only)
+- [X] T016 [US2] Build inventory alerts UI in frontend/src/components/InventoryAlerts.tsx (two lists, counts, supporting rows, Persian RTL + demo-data label)
 
 **Checkpoint**: At this point, User Stories 1 AND 2 should both work independently
 
@@ -76,9 +76,9 @@
 
 **Independent Test**: Seed varied balances/receipts; totals + top-5 debtors + payments match v_receivables and update with filters.
 
-- [ ] T017 [P] [US3] Implement receivables KPI service in backend/Zharfa.Api/Analytics/ReceivablesAnalytics.cs (cash_received = SUM(receipts) in range; receivables_balance = posted net + opening_balance − receipts; top 5 debtors)
-- [ ] T018 [US3] Implement receivables endpoints in backend/Zharfa.Api/Controllers/ReceivablesController.cs (GET /api/receivables + GET /api/receivables/rows per contracts/api.md; manager/admin only)
-- [ ] T019 [US3] Build receivables UI in frontend/src/components/Receivables.tsx (totals, top debtors, payments received, supporting rows, Persian RTL + demo-data label)
+- [X] T017 [P] [US3] Implement receivables KPI service in backend/Zharfa.Api/Analytics/ReceivablesAnalytics.cs (cash_received = SUM(receipts) in range; receivables_balance = posted net + opening_balance − receipts; top 5 debtors)
+- [X] T018 [US3] Implement receivables endpoints in backend/Zharfa.Api/Controllers/ReceivablesController.cs (GET /api/receivables + GET /api/receivables/rows per contracts/api.md; manager/admin only)
+- [X] T019 [US3] Build receivables UI in frontend/src/components/Receivables.tsx (totals, top debtors, payments received, supporting rows, Persian RTL + demo-data label)
 
 **Checkpoint**: All P1 dashboard stories now independently functional
 
@@ -90,10 +90,10 @@
 
 **Independent Test**: Ask both questions against seed; answers cite period/filters/view, match dashboard for same params, or state unavailable; zero invented figures.
 
-- [ ] T020 [P] [US4] Implement provider interface + one cloud HTTP implementation + Ollama seam in backend/Zharfa.Api/Ai/ (IAiProvider.cs, CloudAiProvider.cs from AiProvider__* env, OllamaAiProvider.cs unimplemented stub; redacted status only)
-- [ ] T021 [US4] Implement three allowlisted read-only AI tools in backend/Zharfa.Api/Ai/AnalystTools.cs (sales/inventory/receivables over approved views, fixed params, row/time limits, call timeout; no writes/arbitrary SQL)
-- [ ] T022 [US4] Implement AI chat endpoint in backend/Zharfa.Api/Controllers/AiController.cs (POST /api/ai/chat per contracts/api.md; cited answers, facts-vs-interpretation split, unavailable path, 503 when provider down)
-- [ ] T023 [US4] Build Persian AI chat UI in frontend/src/components/AiChat.tsx (question box, cited answers with period/filters/view, unavailable states, demo-data label)
+- [X] T020 [P] [US4] Implement provider interface + one cloud HTTP implementation + Ollama seam in backend/Zharfa.Api/Ai/ (IAiProvider.cs, CloudAiProvider.cs from AiProvider__* env, OllamaAiProvider.cs unimplemented stub; redacted status only)
+- [X] T021 [US4] Implement three allowlisted read-only AI tools in backend/Zharfa.Api/Ai/AnalystTools.cs (sales/inventory/receivables over approved views, fixed params, row/time limits, call timeout; no writes/arbitrary SQL)
+- [X] T022 [US4] Implement AI chat endpoint in backend/Zharfa.Api/Controllers/AiController.cs (POST /api/ai/chat per contracts/api.md; cited answers, facts-vs-interpretation split, unavailable path, 503 when provider down)
+- [X] T023 [US4] Build Persian AI chat UI in frontend/src/components/AiChat.tsx (question box, cited answers with period/filters/view, unavailable states, demo-data label)
 
 ---
 
@@ -103,8 +103,8 @@
 
 **Independent Test**: Manager/anonymous admin calls denied; admin sees name/endpoint/model only; zero secrets in bundle/repo/logs.
 
-- [ ] T024 [US5] Implement admin endpoints in backend/Zharfa.Api/Controllers/AdminController.cs (GET /api/admin/provider redacted status, admin-only; no in-app provider editing in Demo 1)
-- [ ] T025 [US5] Implement direct-API negative authz verification task artifact backend/Zharfa.Api/Controllers/AdminController.cs (manager/anonymous → 403/401 on admin endpoints; document in quickstart scenario 4)
+- [X] T024 [US5] Implement admin endpoints in backend/Zharfa.Api/Controllers/AdminController.cs (GET /api/admin/provider redacted status, admin-only; no in-app provider editing in Demo 1)
+- [X] T025 [US5] Implement direct-API negative authz verification task artifact backend/Zharfa.Api/Controllers/AdminController.cs (manager/anonymous → 403/401 on admin endpoints; document in quickstart scenario 4)
 
 ---
 
@@ -114,10 +114,10 @@
 
 **Independent Test**: Clean Docker-host install works with no Mabna/manual edits; reconciliation match:true (mismatch → blocked + AuditLog); print readable; backup/restore run once.
 
-- [ ] T026 [P] [US6] Implement reconciliation check in backend/Zharfa.Api/Analytics/Reconciliation.cs + GET /api/admin/reconciliation (same-predicate API vs view totals; mismatch → AuditLog reconciliation.mismatch + blocked sign-off)
-- [ ] T027 [US6] Add print CSS for Persian RTL report in frontend/src/index.css + views (readable browser-print; demo-data label prints)
-- [ ] T028 [US6] Extend deploy/README.md install/restore docs (runner behavior, seed accounts, provider env, ZHARFA_FRONTEND_URL, backup/restore validated-once note; no new services)
-- [ ] T029 [US6] Confirm desktop shell hosts deployed frontend via ZHARFA_FRONTEND_URL with no shell-side logic in desktop/Zharfa.Desktop/MainWindow.xaml.cs (compile-only on Linux; run verified on Windows host)
+- [X] T026 [P] [US6] Implement reconciliation check in backend/Zharfa.Api/Analytics/Reconciliation.cs + GET /api/admin/reconciliation (same-predicate API vs view totals; mismatch → AuditLog reconciliation.mismatch + blocked sign-off)
+- [X] T027 [US6] Add print CSS for Persian RTL report in frontend/src/index.css + views (readable browser-print; demo-data label prints)
+- [X] T028 [US6] Extend deploy/README.md install/restore docs (runner behavior, seed accounts, provider env, ZHARFA_FRONTEND_URL, backup/restore validated-once note; no new services)
+- [X] T029 [US6] Confirm desktop shell hosts deployed frontend via ZHARFA_FRONTEND_URL with no shell-side logic in desktop/Zharfa.Desktop/MainWindow.xaml.cs (compile-only on Linux; run verified on Windows host)
 
 ---
 
@@ -125,9 +125,9 @@
 
 **Purpose**: Improvements that affect multiple user stories
 
-- [ ] T030 [P] AuditLog coverage for admin/config + reconciliation events in backend/Zharfa.Api/Data/AuditLog.cs path (reconciliation.run/mismatch, provider.status.viewed)
-- [ ] T031 Persian UX consistency pass across frontend/src (RTL, Jalali, Persian numbers/currency, demo-data labels on every data view, empty-state Persian copy)
-- [ ] T032 Run quickstart.md validation scenarios 1-6 and record results (Docker/Windows-host steps on capable host or CI)
+- [X] T030 [P] AuditLog coverage for admin/config + reconciliation events in backend/Zharfa.Api/Data/AuditLog.cs path (reconciliation.run/mismatch, provider.status.viewed)
+- [X] T031 Persian UX consistency pass across frontend/src (RTL, Jalali, Persian numbers/currency, demo-data labels on every data view, empty-state Persian copy)
+- [X] T032 Run quickstart.md validation scenarios 1-6 and record results (Docker/Windows-host steps on capable host or CI)
 
 ---
 
@@ -218,3 +218,11 @@ With multiple developers:
 - Commit after each task or logical group
 - Stop at any checkpoint to validate story independently
 - Avoid: vague tasks, same file conflicts, cross-story dependencies that break independence
+
+---
+
+## Phase 10: Convergence
+
+- [X] T033 [C1] Remove the unused `v_inventory_rows` function via a new forward-only migration `db/migrations/0004_drop_inventory_rows.sql` (`DROP FUNCTION IF EXISTS v_inventory_rows(bigint, numeric)`); do NOT edit already-tracked 0002; reconcile db/README's KPI-entry-point wording with the resulting `v_*` function set (plan: data-model semantic-view set) (unrequested)
+- [X] T034 [C2] Record the additive category-filter source in specs/001-zharfa-demo1/contracts/api.md: `GET /api/meta/categories` and the `v_categories()` function behind it (db/migrations/0003_categories.sql) — justify-and-document the build-time addition that keeps FR-004's single-select filter reading through an approved read-only view (FR-004) (unrequested)
+- [X] T035 [C3] Align contracts/api.md response schemas with shipped, mandated additive fields: sales/receivables `period.prev:{from,to,jalaliLabel}` (locked decision of this build) and reconciliation `signOffBlocked` (T026-mandated), matching the actual API responses byte-for-byte (contracts/api.md) (partial)

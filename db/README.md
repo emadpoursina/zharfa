@@ -23,5 +23,6 @@ db/
   (sales revenue, cash received, receivables balance — never equated).
 - Seed data is demonstration data and must be labeled as such.
 
-No migration runner is chosen yet (scaffold only); the feature card that adds
-the first migration also wires the runner into the API startup.
+Migrations are executed on API startup by `backend/Zharfa.Api/Data/MigrationRunner.cs`.
+The runner already exists, applies pending files forward-only under `db/migrations/` in sequential transactions tracked in `schema_migrations`, and applies seeds under `db/seed/` only on an empty `app_user`.
+The six KPI entry points are parameterized functions named `v_*` (`v_sales_overview`, `v_sales_lines`, `v_inventory_alerts`, `v_receivables`, `v_receivable_rows`, and `v_categories` serving the filter; called via `SELECT * FROM v_sales_overview(p_from => ..., p_to => ..., p_prev_from => ..., p_prev_to => ...)`).

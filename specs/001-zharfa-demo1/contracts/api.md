@@ -6,7 +6,7 @@ Base: `/api`. Auth: session cookie from Persian login (seeded demo Manager/Admin
 
 ## Conventions
 
-- Period: `from`/`to` Gregorian ISO dates (API boundary); UI shows Jalali labels. `categoryId` optional single-select. AI echoes resolved Gregorian range with the Jalali label.
+- Period: `from`/`to` Gregorian ISO dates (API boundary); UI shows Jalali labels. `categoryId` optional single-select. AI echoes resolved Gregorian range with the Jalali label. Server responses include `prev:{from,to,jalaliLabel}` for the comparative previous-period window.
 - Amounts: strings with two decimals in JSON (Persian formatting is UI-side).
 
 ## Endpoints
@@ -22,11 +22,17 @@ Base: `/api`. Auth: session cookie from Persian login (seeded demo Manager/Admin
 ### GET /api/sales/overview?from=&to=&categoryId=
 
 - Roles: manager, admin. Reads `v_sales_overview`.
-- 200: `{ demoData:true, period:{from,to,jalaliLabel}, filters:{categoryId}, totals:{revenue, prevRevenue, momDelta, momPct}, trend:[{bucket, revenue}], topProducts:[{productId,name, revenue}≤5], topCustomers:[{customerId,name, revenue}≤5], view:'v_sales_overview' }`.
+- 200: `{ demoData:true, period:{from,to,jalaliLabel,prev:{from,to,jalaliLabel}}, filters:{categoryId}, totals:{revenue, prevRevenue, momDelta, momPct}, trend:[{bucket, revenue}], topProducts:[{productId,name, revenue}≤5], topCustomers:[{customerId,name, revenue}≤5], view:'v_sales_overview' }`. `prev:{from,to,jalaliLabel}` is the previous-period window computed by the server (custom ranges get the same-length preceding window; exact Jalali months get the previous Jalali month).
 
 ### GET /api/sales/lines?from=&to=&categoryId=
 
-- Roles: manager, admin. Reads `v_sales_lines`. 200: `{ demoData:true, period, filters, lines:[{invoiceId, date, customer, product, qty, unitPrice, lineDiscount, net}], view:'v_sales_lines' }`.
+- Roles: manager, admin. Reads `v_sales_lines`. 200: `{ demoData:true, period:{from,to,jalaliLabel,prev:{from,to,jalaliLabel}}, filters, lines:[{invoiceId, date, customer, product, qty, unitPrice, lineDiscount, net}], view:'v_sales_lines' }`.
+
+### GET /api/meta/categories
+
+- Roles: manager, admin. Reads `v_categories()` (db/migrations/0003_categories.sql).
+- Purpose: source for the single-select product-category filter (FR-004) so the filter reads through an approved read-only view rather than a hardcoded list.
+- 200: `{ demoData:true, categories:[{categoryId, name}], view:'v_categories' }`.
 
 ### GET /api/inventory/alerts?categoryId=
 
@@ -36,11 +42,11 @@ Base: `/api`. Auth: session cookie from Persian login (seeded demo Manager/Admin
 ### GET /api/receivables?from=&to=
 
 - Roles: manager, admin. Reads `v_receivables` + `v_receivable_rows`.
-- 200: `{ demoData:true, period, totals:{receivables, paymentsReceived}, topDebtors:[{customerId,name,balance}≤5], view:'v_receivables' }`.
+- 200: `{ demoData:true, period:{from,to,jalaliLabel,prev:{from,to,jalaliLabel}}, totals:{receivables, paymentsReceived}, topDebtors:[{customerId,name,balance}≤5], view:'v_receivables' }`.
 
 ### GET /api/receivables/rows?from=&to=
 
-- Supporting rows for FR-005. Same auth/views pattern.
+- Supporting rows for FR-005. Same auth/views pattern (`period:{from,to,jalaliLabel,prev:{from,to,jalaliLabel}}`).
 
 ### POST /api/ai/chat
 
@@ -54,7 +60,7 @@ Base: `/api`. Auth: session cookie from Persian login (seeded demo Manager/Admin
 
 ### GET /api/admin/reconciliation?from=&to=
 
-- Roles: admin only. Recomputes sales + receivables totals with the same predicates as the views, compares to view totals; 200 `{ match:boolean, apiTotals, viewTotals, at }`; on mismatch also writes AuditLog `reconciliation.mismatch` and sign-off is blocked (FR-013).
+- Roles: admin only. Recomputes sales + receivables totals with the same predicates as the views, compares to view totals; 200 `{ match:boolean, apiTotals, viewTotals, at, signOffBlocked:boolean }` (`signOffBlocked`: true when match=false — sign-off is blocked, FR-013); on mismatch also writes AuditLog `reconciliation.mismatch` and sign-off is blocked (FR-013).
 
 ### Print/export
 

@@ -36,6 +36,7 @@ services:
       AiProvider__Endpoint: ${AI_PROVIDER_ENDPOINT:-}
       AiProvider__Model: ${AI_PROVIDER_MODEL:-}
       AiProvider__ApiKey: ${AI_PROVIDER_API_KEY:-}
+      Inventory__LowStockThreshold: ${INVENTORY_LOW_STOCK_THRESHOLD:-10}
     depends_on:
       db:
         condition: service_healthy
