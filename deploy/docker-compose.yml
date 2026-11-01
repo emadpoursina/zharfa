@@ -1,0 +1,56 @@
+# Zharfa Demo 1 — self-hosted deployment: PostgreSQL, backend API, and the
+# web/reverse-proxy service that serves the shared Persian RTL frontend.
+#
+# Demo 1 runs on synthetic demonstration data only and never connects to any
+# legacy system. Secrets come from deploy/.env (gitignored) or Docker secrets —
+# never from the frontend bundle or the repository.
+
+name: zharfa
+
+services:
+  db:
+    image: postgres:18-alpine
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-zharfa}
+      POSTGRES_USER: ${POSTGRES_USER:-zharfa}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in deploy/.env}
+    volumes:
+      - zharfa-postgres:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  api:
+    build:
+      context: ..
+      dockerfile: backend/Dockerfile
+    environment:
+      ASPNETCORE_ENVIRONMENT: Production
+      ASPNETCORE_URLS: http://+:8080
+      ConnectionStrings__Zharfa: "Host=db;Port=5432;Database=${POSTGRES_DB:-zharfa};Username=${POSTGRES_USER:-zharfa};Password=${POSTGRES_PASSWORD}"
+      # Single AI provider for Demo 1; values come from deploy/.env only.
+      AiProvider__Name: ${AI_PROVIDER_NAME:-}
+      AiProvider__Endpoint: ${AI_PROVIDER_ENDPOINT:-}
+      AiProvider__Model: ${AI_PROVIDER_MODEL:-}
+      AiProvider__ApiKey: ${AI_PROVIDER_API_KEY:-}
+      Inventory__LowStockThreshold: ${INVENTORY_LOW_STOCK_THRESHOLD:-10}
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: unless-stopped
+
+  web:
+    build:
+      context: ..
+      dockerfile: deploy/web/Dockerfile
+    ports:
+      - "${ZHARFA_PORT:-8080}:80"
+    depends_on:
+      - api
+    restart: unless-stopped
+
+volumes:
+  zharfa-postgres:
