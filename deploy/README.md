@@ -3,7 +3,30 @@
 Services: `db` (PostgreSQL 18), `api` (ASP.NET Core), `web` (static frontend +
 nginx reverse proxy for `/api`).
 
-## Install
+## Quick start (helper scripts)
+
+Copy the env file once and set `POSTGRES_PASSWORD`, then use the helper for your OS:
+
+```bash
+cp deploy/.env.example deploy/.env       # Windows: copy deploy\.env.example deploy\.env
+```
+
+| Action | macOS / Linux | Windows (PowerShell) |
+| --- | --- | --- |
+| Start (build if needed) | `./deploy/zharfa.sh up` | `.\deploy\zharfa.ps1 up` |
+| Stop (keeps data) | `./deploy/zharfa.sh down` | `.\deploy\zharfa.ps1 down` |
+| Rebuild and restart | `./deploy/zharfa.sh restart` | `.\deploy\zharfa.ps1 restart` |
+| Status | `./deploy/zharfa.sh status` | `.\deploy\zharfa.ps1 status` |
+| API logs | `./deploy/zharfa.sh logs` | `.\deploy\zharfa.ps1 logs` |
+| Delete database (asks first) | `./deploy/zharfa.sh reset` | `.\deploy\zharfa.ps1 reset` |
+
+If PowerShell blocks the script, run it once as
+`powershell -ExecutionPolicy Bypass -File .\deploy\zharfa.ps1 up`.
+
+The helpers include `deploy/docker-compose.9router.yml` automatically when that
+file exists (the local 9router network override).
+
+## Install (manual)
 
 ```bash
 cp deploy/.env.example deploy/.env   # then set POSTGRES_PASSWORD + AI provider values
