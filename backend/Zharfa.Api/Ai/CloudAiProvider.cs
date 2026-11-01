@@ -192,8 +192,8 @@ public class CloudAiProvider : IAiProvider
 
             try
             {
-                await using var stream = await response.Content.ReadAsStreamAsync(ct);
-                using var doc = await JsonDocument.ParseAsync(stream, cancellationToken: ct);
+                var body = await response.Content.ReadAsStringAsync(ct);
+                using var doc = JsonDocument.Parse(ExtractFirstJsonValue(body));
                 var root = doc.RootElement;
 
                 if (!root.TryGetProperty("choices", out var choicesElem) ||
@@ -261,5 +261,41 @@ public class CloudAiProvider : IAiProvider
                 throw new AiException("خطا در پردازش پاسخ سرویس هوش مصنوعی.", ex);
             }
         }
+    }
+
+    /// <summary>
+    /// Some OpenAI-compatible gateways (e.g. 9router) append a trailer such as
+    /// "data: [DONE]" after the JSON body. Return only the first JSON value so
+    /// the trailer does not break parsing. Handles a bare JSON body and a body
+    /// whose JSON is carried on a "data:" line.
+    /// </summary>
+    internal static string ExtractFirstJsonValue(string body)
+    {
+        var trimmed = body.TrimStart();
+        string candidate = trimmed;
+
+        if (!trimmed.StartsWith('{'))
+        {
+            foreach (var rawLine in body.Split('\n'))
+            {
+                var line = rawLine.Trim();
+                if (!line.StartsWith("data:", StringComparison.Ordinal)) continue;
+                var payload = line.Substring(5).TrimStart();
+                if (payload.StartsWith('{'))
+                {
+                    candidate = payload;
+                    break;
+                }
+            }
+        }
+
+        var bytes = System.Text.Encoding.UTF8.GetBytes(candidate);
+        var reader = new Utf8JsonReader(bytes, isFinalBlock: true, state: default);
+        if (!reader.Read())
+        {
+            throw new JsonException("AI provider response contained no JSON value.");
+        }
+        reader.Skip();
+        return System.Text.Encoding.UTF8.GetString(bytes, 0, (int)reader.BytesConsumed);
     }
 }
