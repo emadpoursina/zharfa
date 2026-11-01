@@ -84,3 +84,19 @@
 
 PRD §4 observable checks: check 1 (Persian dashboard, Jalali, consistent numbers) — holds on this host at build+API level (visual spot-check pending a capable browser host); check 2 (sales/inventory/receivables match DB views and independent SQL) — holds; check 3 (AI cited answers / unavailable over guessing) — holds (mock provider); check 4 (RBAC + no key material anywhere) — holds; check 5 (clean install, reconciliation, print, backup/restore) — holds in part (reconciliation + migration-runner semantics proven here); clean Compose install, pg_dump/restore, print visual and the Windows shell run await Docker/Windows/CI per the locked plan-around.
 Recorded by the build-phase orchestrator before the T030-T032 polish pass; the polish pass sanitizes the error envelope (F2) after this run — scenarios 1-6 above do not exercise the sanitized paths; the orchestrator re-probes those two paths against the rebuilt API after polish.
+
+
+---
+
+## Re-check 2026-11-01 (macOS host, live Docker stack)
+
+- **Host**: macOS, Docker stack from `deploy/docker-compose.yml` already running (`zharfa-web`, `zharfa-api`, `zharfa-db`). AI provider is the live gateway configured in `deploy/.env` (name `9router`, model `Reasoning`), not the earlier local mock.
+- **Health**: `GET http://localhost:8080/api/health` returned `status ok`, `demoData true`.
+- **Auth/RBAC**: manager and admin logins returned 200. Anonymous `GET /api/admin/provider` returned 401. Manager `GET /api/admin/provider` returned 403. Admin returned `configured true` with `name 9router` and no key material.
+- **Reconciliation** (admin, default range): `match true`, `apiTotals.sales 43785000.00` equal `viewTotals.sales 43785000.00`, `receivables 2150440000.00` both sides, `signOffBlocked false`.
+- **Default sales overview period**: 2026-10-23 to 2026-11-02 (Jalali 1405/08/01 to 1405/08/10), revenue `43785000.00`.
+- **AI chat**: Persian sales question returned facts with period and view `v_sales_overview`; Persian debt question returned receivables balance `2150440000` and top debtors from `v_receivables`; Persian low-stock question returned counts from `v_inventory_alerts`; an off-topic English question returned `unavailable true` with the Persian data-unavailable message and no facts.
+- **Secrets**: the provider API key value (read from `deploy/.env`, not written here) appears 0 times in `docker logs zharfa-api-1` and 0 times in the files served by `zharfa-web`.
+- **Backup/restore**: `pg_dump` of `zharfa` produced a 67390-byte dump; restoring into a scratch database `zharfa_restore_test` gave the same counts (101 invoices, 56 receipts, 2 users) in both; the scratch database was dropped afterward.
+- **Windows shell (operator-reported)**: the operator ran `Zharfa.Desktop` on a Windows PC against the Mac's stack at `http://192.168.8.100:8080` (LAN, firewall off) and reported it working. Detailed per-check notes were not recorded.
+- **Still NOT RUN**: clean Compose install from empty volumes; browser visual check of Persian RTL pages and browser-print output (not confirmed by the operator).
