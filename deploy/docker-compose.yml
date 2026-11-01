@@ -15,7 +15,7 @@ services:
       POSTGRES_USER: ${POSTGRES_USER:-zharfa}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in deploy/.env}
     volumes:
-      - zharfa-postgres:/var/lib/postgresql/data
+      - zharfa-postgres:/var/lib/postgresql
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
       interval: 10s
