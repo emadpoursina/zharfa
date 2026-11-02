@@ -1,5 +1,18 @@
 @import "tailwindcss";
 
+/* Self-hosted Vazirmatn variable font (SIL OFL-1.1, @fontsource-variable/vazirmatn).
+   Bundled by Vite — no CDN, so it renders identically offline, in the WebView2
+   shell and in browser print. Persian digits (۰-۹) come from the `arabic`
+   subset; Latin labels from `latin`. */
+@theme {
+  --font-sans: "Vazirmatn Variable", Vazirmatn, "Segoe UI", Tahoma, system-ui,
+    sans-serif;
+  /* Persian digits in font-mono cells (batch IDs, invoice IDs) fall back to
+     Vazirmatn instead of an arbitrary system font. */
+  --font-mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas,
+    "Vazirmatn Variable", "Liberation Mono", "Courier New", monospace;
+}
+
 /* Persian-first RTL defaults (Demo 1 is RTL-only; English is deferred). */
 html {
   direction: rtl;
@@ -7,7 +20,7 @@ html {
 
 body {
   margin: 0;
-  font-family: Vazirmatn, "Segoe UI", Tahoma, system-ui, sans-serif;
+  font-family: var(--font-sans);
   background-color: #ffffff;
   color: #111827;
 }

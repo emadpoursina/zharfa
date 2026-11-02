@@ -22,7 +22,9 @@ database access is granted; the legacy system stays out of Demo 1 entirely.
 ## Repository layout
 
 ```
-frontend/        React + TypeScript + Vite + Tailwind shared frontend (Persian RTL)
+frontend/        React + TypeScript + Vite + Tailwind shared frontend (Persian RTL;
+                 self-hosted Vazirmatn variable font, SIL OFL-1.1 — see
+                 frontend/public/OFL-Vazirmatn.txt, no font CDN)
 backend/         ASP.NET Core Web API (Zharfa.Api) + its Dockerfile
 desktop/         Thin WebView2 + WPF Windows shell (Zharfa.Desktop)
 db/              PostgreSQL migrations/ + seed/ (synthetic demonstration data)
