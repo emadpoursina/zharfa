@@ -10,6 +10,10 @@
 
   <ItemGroup>
     <PackageReference Include="Npgsql.EntityFrameworkCore.PostgreSQL" Version="10.0.3" />
+    <!-- Mabna read-only source (spec 002): Microsoft's supported ADO.NET driver for
+         SQL Server; System.Data.SqlClient is deprecated and EF Core is unnecessary for a
+         structured read gateway. Latest stable 7.x; used only by Mabna/MabnaReader. -->
+    <PackageReference Include="Microsoft.Data.SqlClient" Version="7.1.2" />
   </ItemGroup>
 
 </Project>

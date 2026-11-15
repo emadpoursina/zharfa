@@ -5,7 +5,9 @@
 //    PostgreSQL views; no client talks to the database directly.
 //  - Secrets (DB credentials, AI keys) come from server environment / Docker
 //    secrets only — never from the frontend bundle, the repo, or logs.
-//  - Demo 1 has no Mabna / SQL Server connection of any kind.
+//  - Demo 1 has no Mabna / SQL Server connection. The post-Demo-1 Mabna read
+//    seam (Mabna/, spec 002) is registered but disabled unless
+//    ConnectionStrings__Mabna is set; all Mabna access goes through IMabnaReader.
 
 using System.Text.Json;
 using Microsoft.AspNetCore.Authentication.Cookies;
@@ -14,6 +16,7 @@ using Microsoft.EntityFrameworkCore;
 using Zharfa.Api.Ai;
 using Zharfa.Api.Analytics;
 using Zharfa.Api.Data;
+using Zharfa.Api.Mabna;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -72,6 +75,8 @@ builder.Services.AddScoped<IReconciliationService, ReconciliationService>();
 builder.Services.AddHttpContextAccessor();
 builder.Services.AddScoped<IAuditLogger, AuditLogger>();
 builder.Services.AddScoped<AuditLogger>();
+
+builder.Services.AddMabnaSource(builder.Configuration);
 
 builder.Services.AddHttpClient("ai", client =>
 {
