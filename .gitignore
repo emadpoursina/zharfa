@@ -41,3 +41,7 @@ Thumbs.db
 # Tester evidence bundles — local/CI-only, never committed
 specs/*/evidence/
 specs/*/evidence.md
+
+# Mabna simulator: anything derived from the real schema/data (FR-02)
+deploy/mabna-sim/generated/*
+!deploy/mabna-sim/generated/.gitkeep
