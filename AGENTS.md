@@ -23,7 +23,8 @@
   Docs: `zharfa-demo1-prd.md` + `PRD.md` at the root (tracked), `README.md`,
   `AGENTS.md`, `.ainative/project.yaml`, Spec Kit layout in `.specify/` +
   `.pi/prompts/speckit.*.md`. `scratch/` is for throwaway notes and is
-  gitignored.
+  gitignored. Spec 002 adds `deploy/mabna-sim/` (offline Mabna SQL Server
+  simulator, synthetic data) and `backend/Zharfa.Api.Tests` (xunit tests).
 
 ## Workflow
 
@@ -78,6 +79,8 @@ dotnet run --project backend/Zharfa.Api                           # API on :5080
 dotnet build backend/Zharfa.Api/Zharfa.Api.csproj                 # backend compile
 dotnet build desktop/Zharfa.Desktop/Zharfa.Desktop.csproj         # desktop shell compile (any OS)
 docker compose -f deploy/docker-compose.yml up --build -d         # db + api + web/proxy
+docker compose -f deploy/docker-compose.mabna-sim.yml up -d       # Mabna simulator, synthetic data (deploy/mabna-sim/README.md)
+dotnet test backend/Zharfa.Api.Tests                              # backend unit tests (no DB or network)
 ```
 
 - The tester runs `.ainative/project.yaml` `validation_commands`; workers do

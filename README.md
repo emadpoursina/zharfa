@@ -41,9 +41,30 @@ Structure only so far — Demo 1 feature code lands on feature cards.
 npm --prefix frontend install && npm --prefix frontend run build   # frontend build
 dotnet run --project backend/Zharfa.Api                            # API on :5080
 dotnet build desktop/Zharfa.Desktop                                # desktop shell compile
+dotnet test backend/Zharfa.Api.Tests                               # backend unit tests (no DB or network)
 docker compose -f deploy/docker-compose.yml up --build -d          # full deployment
 ```
 
 `validation_commands` in [`.ainative/project.yaml`](.ainative/project.yaml)
 list exactly what the tester runs; the backend and desktop builds need the
 .NET 10 SDK.
+
+## Mabna simulator (offline development)
+
+A local SQL Server 2019 container holds the captured Mabna schema with
+**synthetic** data, so the accounting connector can be built and tested without
+the company server. Live reads happen only on-site, following the checklist.
+
+```bash
+docker compose -f deploy/docker-compose.mabna-sim.yml up -d       # start (first run builds the DB)
+docker compose -f deploy/docker-compose.mabna-sim.yml down        # stop, keep data
+docker compose -f deploy/docker-compose.mabna-sim.yml down -v     # reset: delete the volume
+```
+
+Set `MABNA_SIM_SA_PASSWORD` and `MABNA_SIM_RO_PASSWORD` in `deploy/.env` (see
+`deploy/.env.example`). It listens on `127.0.0.1:14330`.
+
+- Simulator setup, regeneration and seed notes:
+  [`deploy/mabna-sim/README.md`](deploy/mabna-sim/README.md)
+- On-site verification steps:
+  [`specs/002-mabna-accounting-connector/onsite-checklist.md`](specs/002-mabna-accounting-connector/onsite-checklist.md)
