@@ -34,8 +34,10 @@ Listens on `127.0.0.1:14330` (`MABNA_SIM_PORT`). Connection string for the
 connector: `Server=127.0.0.1,14330;Database=TotalSystem;User Id=zharfa_ro;Password=...;TrustServerCertificate=True`.
 
 The one-shot `mabna-sim-init` container runs `generated/*.sql` and `init/*.sql`
-merged in filename order: `00-database`, `01-schema`, `01a-stubs` (only if any), `02a-lookups`, `02b-seed`, `03-objects` (functions + views) (generated),
-`90-readonly-login` (tracked). If `TotalSystem` already exists only `9*` files
+merged in filename order: `00-database`, `01-schema`, `01a-stubs` (only if any), `01b-sim-stubs` (only if any),
+`02a-lookups`, `02b-seed`, `03-objects` (functions + views), `04-reports` (report procedures and their runs, only if any)
+(all generated), `90-readonly-login` (tracked). Hand-written inputs of the generator live in the gitignored
+`generated/src/` (a subdirectory, so the init container does not run them). If `TotalSystem` already exists only `9*` files
 are re-run, so `up` is idempotent; use `down -v` to rebuild.
 
 ## Read-only login
@@ -111,17 +113,15 @@ default, NULL or a typed value). Tables that are FK children of scenario tables
 are generated after it. This is how the demo company is made internally
 consistent (customers, invoices with items, cancelled invoices, returns, opening
 invoices, receipts with allocations, cheques with a state history, bounced
-cheques, report scratch tables). Mind the letters: the seed text uses Arabic ي
+cheques, fiscal-year membership; the report scratch tables are filled by the
+captured procedures, see below). Mind the letters: the seed text uses Arabic ي
 and Persian ک only; Arabic ك appears only in cheque descriptions, as in the real
 data. Free-text columns the scenario fills carry the marker "(داده نمايشي)".
 
 Some captured report views read per-host report scratch tables and filter on
-`hostid = HOST_ID()`, the client process id, which cannot be known at seed time.
-The seed stores `hostid = 1` rows, so those views return no rows on a normal
-connection (exactly like the real database before a report is run). To test them,
-as `sa` inside a transaction you roll back, set the scratch tables' `hostid` to
-`CAST(HOST_ID() AS int)`; the exact table and view names are in
-`generated/03-objects.sql` (gitignored). The other views return rows.
+`hostid = HOST_ID()`, the client process id. See "Report procedures and HOST_ID()" below:
+the simulator fills those tables with the captured filler procedures during init, so
+these views return rows too. The other views return rows without any of that.
 The lookup load runs with constraints unchecked, so a few FKs show as "not
 trusted" in `sys.foreign_keys`; they are valid.
 
@@ -132,6 +132,65 @@ Try the toolchain without a capture:
 then `python3 deploy/mabna-sim/gen_seed.py` (made-up `SimInvoice` etc., legacy mode) or
 `python3 deploy/mabna-sim/gen_seed.py --capture deploy/mabna-sim/example/schema-capture.example.txt`.
 The example is **PENDING real capture**; replace it before relying on the sim.
+
+## Report procedures and HOST_ID()
+
+The captured report views read per-host scratch tables that only the captured *filler*
+stored procedures write (`DELETE` + `INSERT ... SELECT`, keyed by `hostid`). Those procedures
+run **only inside the simulator, during init** (`04-reports.sql`, as `sa`). **Zharfa must never
+run them against live Mabna: they write.** The connector's SELECT-only guard rejects
+`EXEC`/`INSERT`/`DELETE`, the live login has no write rights, and the simulator's `zharfa_ro`
+is denied `EXECUTE`, `INSERT`, `UPDATE`, `DELETE` (checked after every rebuild).
+
+Generate (extra flags of `gen_schema.py`, all optional, all inputs gitignored):
+
+```bash
+python3 deploy/mabna-sim/gen_schema.py ... \
+  --proc-roots procA,procB,... \                  # procedures to add, with their dependency closure
+  --sim-stubs deploy/mabna-sim/generated/src/sim-stubs.sql \
+  --report-calls deploy/mabna-sim/generated/src/report-calls.sql \
+  --sim-host-id 1
+```
+
+* `depclosure.py` now also follows stored procedures (`EXEC`, `DELETE`, nested procedures) so
+  the closure pulls in every table, view, function and nested procedure they use; new tables
+  are seeded like any other (the scenario adds fiscal-year membership, a current-date constant
+  and a configuration row; the scratch tables themselves are **not** seeded).
+* `--sim-stubs`: simulator-only stand-ins for objects the capture does not contain
+  (security/session objects and a second database the captured code reaches through a
+  cross-database name), with synthetic rows. Hand-written, because they name real objects.
+  Everything they create counts as known, is written to `01b-sim-stubs.sql` and is listed in
+  `generated/sim-changes.txt`. Side effect: the views that read the second database are not
+  readable by `zharfa_ro` (no access there); the report views do not.
+* `--report-calls`: the `EXEC` statements with synthetic parameters (period, fiscal year,
+  center, user) that match the synthetic seed; appended to `04-reports.sql`.
+* Captured procedure and view text is created **unchanged**; the only change to captured code
+  is the `HOST_ID()` rewrite below (also listed in `sim-changes.txt`).
+
+**HOST_ID().** `HOST_ID()` returns the *client process id* (the TDS login `ClientPID`; it is
+the `hostprocess` column of `sys.sysprocesses`), not the session, login or machine. Verified
+here with `sqlcmd` and with `Microsoft.Data.SqlClient`: it differs per client process, is
+constant within one process, and the connection string's `Workstation ID` (or `sqlcmd -H`)
+only changes `HOST_NAME()`, not `HOST_ID()`. Rows a procedure writes during init are
+therefore keyed to the init client's process id and a later `zharfa_ro` connection can never
+match them. Least-invasive simulator-only fix, done at the end of `04-reports.sql` after
+the procedures have run (so they see the real `HOST_ID()` while they execute):
+
+1. the rows written under the init process id are re-keyed to a fixed simulator id
+   (`--sim-host-id`, default in our setup `1`);
+2. every view/function whose text filters on `HOST_ID()` is `ALTER`ed so that it uses that
+   literal instead (`-- SIM CHANGE` comment in each, one line per object in `sim-changes.txt`).
+
+`03-objects.sql` keeps the captured text unchanged.
+
+**Implication for live Mabna.** A read-only client can see rows in those views only if
+rows exist for *its own* process id, i.e. only if the same client process previously ran the
+writing procedure itself (and a new process, or a restart, gets a new id and sees nothing).
+Rows left by other clients are invisible unless some other machine's process id happens to
+be identical, which would show unrelated, stale data (ids are not unique across machines and
+rows are only cleaned when the same id re-runs). So those views are not a usable read
+interface for Zharfa; the connector must read the underlying tables/views directly (the
+report views in the allowlist that do not depend on `HOST_ID()`), never the per-host ones.
 
 ## Seed edge cases
 

@@ -3,7 +3,7 @@
 
   python3 deploy/mabna-sim/check_order.py [generated-dir]
 
-Walks the files in run order (00, 01, 01a, 02a, 02b, 03, ...) and verifies:
+Walks the files in run order (00, 01, 01a, 01b, 02a, 02b, 03, ...) and verifies:
   * no object name is created twice (tables, views, functions, case-insensitive)
   * every CREATE VIEW/FUNCTION references only objects created EARLIER (token-based)
   * every FOREIGN KEY target table + columns exist when the FK is added
@@ -99,7 +99,7 @@ def main():
                 for r in sorted(refs):
                     if r not in tables and r not in other:
                         errs.append("%s: %s %s references %s which is not created earlier" % (base, kind, n, r))
-                if remote:
+                if remote and not base.startswith("01b"):  # 01b = simulator-only stubs (may span databases)
                     errs.append("%s: %s %s has cross-database reference %s" % (base, kind, n, sorted(remote)))
                 other[n] = kind
                 stats["views" if kind == "VIEW" else "functions"] += 1

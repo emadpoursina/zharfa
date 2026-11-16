@@ -30,6 +30,19 @@ on exactly those columns; gen_seed.py fills the stubs with the synthetic keys
 the children use. A FK is dropped (and reported) when its target name looks like
 a security/user/message table (scu*, msg*, scuUser, UserRights, users) or when
 two FKs need the same stub column with a different type/collation.
+Report procedures (optional, dependency-closure mode): --proc-roots NAMES adds stored
+procedures and everything they reference to the closure. Procedures are written to
+04-reports.sql, followed by the contents of --report-calls FILE (hand-written, gitignored,
+the EXEC statements and their parameters). --sim-stubs FILE (hand-written, gitignored) holds
+simulator-only stand-ins (tables with synthetic rows, views, functions) for objects the capture
+does not contain (e.g. security/session objects that are never captured); every object it
+creates counts as known, is written verbatim to 01b-sim-stubs.sql and never blocks a closure.
+--sim-host-id N: after the report runs, 04-reports.sql re-keys the rows written under the init
+client's process id (HOST_ID()) to N and ALTERs the views/functions that filter on HOST_ID() to
+the literal N (03-objects.sql keeps the captured text, so the procedures see the real HOST_ID()
+while they run). HOST_ID() is the client process id, so it cannot match a later read-only
+connection (README).
+Every rewrite/stub is listed in generated/sim-changes.txt.
 Stdlib only. Example: deploy/mabna-sim/example/schema-capture.example.txt
 """
 import argparse
@@ -319,16 +332,53 @@ def lookup_literal(c, v):
     return v  # numeric types
 
 
+HOST_ID_RE = re.compile(r"\bhost_id\s*\(\s*\)", re.I)
+STUB_RE = re.compile(r"CREATE\s+(TABLE|VIEW|FUNCTION)\s+(?:\[?\w+\]?\s*\.\s*)?\[?(\w+)\]?(.*?)(?=\bGO\b|\Z)",
+                     re.I | re.S)
+
+
+USE_RE = re.compile(r"^\s*USE\s+\[?(\w+)\]?\s*;?\s*$", re.I | re.M)
+
+
+def parse_sim_stubs(path, db):
+    """{lowercase name: type_desc} of every table/view/function the stub file creates in
+    database `db` (objects created after a `USE other_db` line, e.g. a simulator-only second
+    database, are not part of the main database and are skipped)."""
+    out = {}
+    with open(path, encoding="utf-8-sig") as fh:
+        txt = fh.read()
+    segs, cur, last = [], db, 0
+    for um in USE_RE.finditer(txt):
+        segs.append((cur, txt[last:um.start()]))
+        cur, last = um.group(1), um.end()
+    segs.append((cur, txt[last:]))
+    txt = "\n".join(t for d, t in segs if d.lower() == db.lower())
+    for m in STUB_RE.finditer(txt):
+        kind, name, rest = m.group(1).upper(), m.group(2).lower(), m.group(3)
+        if kind == "TABLE":
+            out[name] = "USER_TABLE"
+        elif kind == "VIEW":
+            out[name] = "VIEW"
+        else:
+            r = re.search(r"\bRETURNS\s+(@|TABLE)?", rest, re.I)
+            out[name] = ("SQL_TABLE_VALUED_FUNCTION" if r and r.group(1) == "@" else
+                         "SQL_INLINE_TABLE_VALUED_FUNCTION" if r and r.group(1) else "SQL_SCALAR_FUNCTION")
+    return out
+
+
 def select_objects(a, m_all):
     """Dependency closure. Returns a dict describing the selection (see main)."""
     import depclosure as dc
     s = m_all.sections
     known = {r["ObjectName"].lower(): r["type_desc"] for r in s.get("3 objects", [])}
+    stubs = parse_sim_stubs(a.sim_stubs, a.db) if a.sim_stubs else {}
+    known.update(stubs)  # simulator stand-ins: known, never excluded
     schemas = {r["SchemaName"].lower() for r in s.get("3 objects", [])} | {"dbo"}
     excluded = {r["ObjectName"].lower() for r in s.get("2 allowlist", [])
                 if r.get("status", "").startswith("EXCLUDED")}
     defs = dc.read_definitions(a.definitions)
-    graph = dc.build_graph(defs, known, schemas, excluded, NEVER_STUB)
+    proc_roots = [x.strip().lower() for x in a.proc_roots.split(",") if x.strip()] if a.proc_roots else []
+    graph = dc.build_graph(defs, known, schemas, excluded, NEVER_STUB, include_procs=bool(proc_roots))
     by_name = {k[1].lower(): v for k, v in graph.items()}
     key_of = {k[1].lower(): k for k in graph}
 
@@ -338,6 +388,7 @@ def select_objects(a, m_all):
             if r.get("status", "").startswith("OK"):
                 (base_views if "VIEW" in r["status"] else base_tables).add(r["ObjectName"].lower())
     roots = [x.strip().lower() for x in a.roots.split(",") if x.strip()] if a.roots else sorted(base_views)
+    roots = roots + [r for r in proc_roots if r not in roots]
     lookups, lk_skipped = (parse_lookups(a.lookups) if a.lookups else (OrderedDict(), []))
 
     # blocked: unreadable definition, excluded dependency, or cross-database reference;
@@ -371,10 +422,12 @@ def select_objects(a, m_all):
         if n in by_name:
             stack.extend(by_name[n]["deps"])
     kind = lambda n: known.get(n, "?")
-    objs = {n for n in ok if kind(n) in ("VIEW",) + dc.FN_TYPES}
-    dep_tables = {n for n in ok if kind(n) == "USER_TABLE"}
+    objs = {n for n in ok if kind(n) in ("VIEW",) + dc.FN_TYPES and n not in stubs}
+    procs = {n for n in ok if kind(n) == dc.PROC_TYPE}
+    dep_tables = {n for n in ok if kind(n) == "USER_TABLE" and n not in stubs}
     full_tables = {n for n in full if kind(n) == "USER_TABLE"}
-    other = {n for n in ok if kind(n) not in ("VIEW", "USER_TABLE") + dc.FN_TYPES}
+    other = {n for n in ok if kind(n) not in ("VIEW", "USER_TABLE", dc.PROC_TYPE) + dc.FN_TYPES}
+    used_stubs = sorted(n for n in ok if n in stubs)
 
     tname = {k[1].lower(): k for k in m_all.tables}  # all captured USER_TABLEs
     lk_tables = {n.lower() for n in lookups if n.lower() in tname}
@@ -398,7 +451,9 @@ def select_objects(a, m_all):
             else:
                 fk_excluded.add(p)
     order, cyc = dc.topo_order(objs, lambda n: by_name[n]["deps"] if n in by_name else ())
-    return {"tables": want, "tname": tname, "direct_tables": direct, "fk_added": fk_added,
+    proc_order, _ = dc.topo_order(procs, lambda n: by_name[n]["deps"] if n in by_name else ())
+    return {"procs": proc_order, "stubs": stubs, "used_stubs": used_stubs, "proc_roots": proc_roots,
+            "tables": want, "tname": tname, "direct_tables": direct, "fk_added": fk_added,
             "fk_outside": fk_excluded, "objs": objs, "order": order, "cyclic": cyc,
             "defs": defs, "key_of": key_of, "known": known, "blocked": blocked, "roots": roots,
             "graph": by_name, "full_tables": full_tables, "dep_tables": dep_tables,
@@ -419,6 +474,14 @@ def main():
     ap.add_argument("--base-capture", help="earlier capture whose '2 allowlist' OK rows are always kept")
     ap.add_argument("--lookups", help="lookups dump; writes 02a-lookups.sql and keeps those tables")
     ap.add_argument("--row-counts", help="plain row-count file (SchemaName|ObjectName|type_desc|row_count)")
+    ap.add_argument("--proc-roots", help="comma-separated stored procedures to add (with their closure); "
+                    "written to 04-reports.sql (needs --definitions)")
+    ap.add_argument("--sim-stubs", help="gitignored SQL file with simulator-only stand-in objects "
+                    "(tables with synthetic rows, views, functions); written to 01b-sim-stubs.sql")
+    ap.add_argument("--report-calls", help="gitignored SQL file with the EXEC statements that run the "
+                    "procedures (appended to 04-reports.sql)")
+    ap.add_argument("--sim-host-id", type=int, help="after the report runs: re-key hostid rows written by the "
+                    "procedures to this value and ALTER views/functions to filter on it instead of HOST_ID()")
     a = ap.parse_args()
 
     sel = None
@@ -498,7 +561,7 @@ def main():
         os.remove(sp)
 
     legacy_views = sel is None
-    made, skipped = [], []
+    made, skipped, changes = [], [], []
     vp = os.path.join(a.out, "03-views.sql")
     op = os.path.join(a.out, "03-objects.sql")
     for stale in (vp, op):
@@ -525,10 +588,14 @@ def main():
         for n in sel["order"]:
             k = sel["key_of"][n]
             d = sel["defs"][k]
-            vo.append("-- %s %s\n%s\nGO\n" % (d["type"], k[1], d["text"].strip()))
+            body = d["text"].strip()
+            vo.append("-- %s %s\n%s\nGO\n" % (d["type"], k[1], body))
             made.append(k[1])
         with open(op, "w", encoding="utf-8") as f:
             f.write("\n".join(vo) + "\n")
+
+    # --- simulator stubs and report procedures ----------------------------
+    write_reports(a, m, sel, hdr, changes)
 
     # --- lookup tables ---------------------------------------------------
     n_lk_rows = 0
@@ -586,6 +653,7 @@ def main():
 
     if sel is not None:
         info = {"tables": sorted(k[1] for k in m.tables),
+                "procedures": [sel["key_of"][n][1] for n in sel["procs"]],
                 "lookups": [x[0] for x in lk_done],
                 "views_functions": [sel["key_of"][n][1] for n in sel["order"]],
                 "roots": sel["roots"]}
@@ -603,6 +671,74 @@ def main():
         print("  skipped view %s: missing %s" % (vn, ", ".join(missing)))
     if sel is not None:
         report(sel, m, made, lk_done, n_lk_rows)
+
+
+def write_reports(a, m, sel, hdr, changes):
+    """01b-sim-stubs.sql, 04-reports.sql and sim-changes.txt (all generated/, gitignored)."""
+    sp = os.path.join(a.out, "01b-sim-stubs.sql")
+    rp = os.path.join(a.out, "04-reports.sql")
+    cp = os.path.join(a.out, "sim-changes.txt")
+    for stale in (sp, rp, cp):
+        if os.path.exists(stale):
+            os.remove(stale)
+    if sel is None:
+        return
+    lines = []
+    if a.sim_stubs:
+        with open(a.sim_stubs, encoding="utf-8-sig") as fh:
+            body = fh.read()
+        with open(sp, "w", encoding="utf-8") as f:
+            f.write(hdr + "-- SIMULATOR-ONLY stand-ins for objects the capture does not contain.\n"
+                    "-- Synthetic demonstration data. Source: %s\n" % os.path.basename(a.sim_stubs))
+            f.write("USE %s;\nGO\n" % q(a.db))
+            f.write(body.rstrip() + "\n")
+        for n in sel["used_stubs"]:
+            lines.append("STUB (simulator-only, from %s): %s [%s]" % (
+                os.path.basename(a.sim_stubs), n, sel["stubs"][n]))
+    if sel["procs"]:
+        out = [hdr, "-- Report procedures: run ONLY inside the simulator during init. They WRITE to the\n"
+                    "-- per-host report tables; Zharfa never runs them (read-only connector, SELECT-only guard).\n"
+                    "USE %s;\nGO\n" % q(a.db)]
+        for n in sel["procs"]:
+            k = sel["key_of"][n]
+            out.append("-- %s %s\n%s\nGO\n" % (sel["defs"][k]["type"], k[1], sel["defs"][k]["text"].strip()))
+        if a.report_calls:
+            with open(a.report_calls, encoding="utf-8-sig") as fh:
+                out.append("-- Report runs (parameters from %s)\n%s\nGO\n" % (
+                    os.path.basename(a.report_calls), fh.read().rstrip()))
+        if a.sim_host_id is not None:
+            hosts = sorted((sc, tb, c["column_name"]) for (sc, tb), cl in m.tables.items()
+                           for c in cl if c["column_name"].lower() == "hostid")
+            out.append("-- Re-key the rows written under this client's process id to the fixed simulator\n"
+                       "-- host id that the generated views use (HOST_ID() cannot match a later connection).\n"
+                       "SET NOCOUNT ON;")
+            for sc, tb, col in hosts:
+                out.append("UPDATE %s.%s SET %s = %d WHERE %s = CAST(HOST_ID() AS int);" % (
+                    q(sc), q(tb), q(col), a.sim_host_id, q(col)))
+                changes.append("REKEY %s.%s.%s: rows written by report procedures set to %d" % (
+                    sc, tb, col, a.sim_host_id))
+            out.append("GO\n")
+            # Phase 2: only now do the views/functions that filter on HOST_ID() get the fixed id
+            # (during the report runs they must keep matching the process id the procedures write).
+            for n in sel["order"]:
+                k = sel["key_of"][n]
+                d = sel["defs"][k]
+                body, cnt = HOST_ID_RE.subn(str(a.sim_host_id), d["text"].strip())
+                if not cnt:
+                    continue
+                body, nalt = re.subn(r"(?im)^(\s*)CREATE(\s+)(VIEW|FUNCTION)\b", r"\1ALTER\2\3", body, count=1)
+                if nalt != 1:
+                    sys.exit("cannot turn %s into ALTER" % k[1])
+                out.append("-- SIM CHANGE: %s %s: HOST_ID() replaced by %d (%d occurrence(s)); see README\n%s\nGO\n" % (
+                    d["type"], k[1], a.sim_host_id, cnt, body))
+                changes.append("%s %s: ALTERed after the report runs, HOST_ID() -> %d (%d occurrence(s))" % (
+                    d["type"], k[1], a.sim_host_id, cnt))
+        with open(rp, "w", encoding="utf-8") as f:
+            f.write("\n".join(out) + "\n")
+        lines.extend("PROCEDURE created unchanged: " + sel["key_of"][n][1] for n in sel["procs"])
+    with open(cp, "w", encoding="utf-8") as f:
+        f.write("Simulator changes to captured code and simulator-only objects (gitignored, real names).\n")
+        f.write("\n".join(changes + lines) + "\n")
 
 
 def report(sel, m, made, lk_done, n_lk_rows):

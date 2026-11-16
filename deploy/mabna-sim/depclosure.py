@@ -16,7 +16,7 @@ the set of known objects it references.
 Reference rules (only names that exist in the capture's object list count):
   * schema.name / db.schema.name  -> a reference to name
   * bare name in table position   -> after FROM / JOIN / APPLY / INTO / UPDATE /
-                                     MERGE / USING / EXEC, or after a comma
+                                     MERGE / USING / DELETE / EXEC, or after a comma
                                      inside a FROM list, or `name(` for a known
                                      function
   * alias.column                  -> NOT a reference (alias is not a schema)
@@ -30,7 +30,8 @@ from collections import OrderedDict, defaultdict
 HEADER = re.compile(r"^-- ======== ([A-Z_]+) \[([^\]]+)\]\.\[(.+)\] ========\s*$")
 FROM_CLEAR = {"WHERE", "GROUP", "ORDER", "HAVING", "UNION", "EXCEPT", "INTERSECT", "SELECT",
               "SET", "OPTION", "FOR", "ON", "WHEN", "THEN", "VALUES", "BEGIN", "END", "RETURN"}
-TABLE_PREV = {"FROM", "JOIN", "APPLY", "INTO", "UPDATE", "MERGE", "USING", "EXEC", "EXECUTE"}
+TABLE_PREV = {"FROM", "JOIN", "APPLY", "INTO", "UPDATE", "MERGE", "USING", "EXEC", "EXECUTE", "DELETE"}
+PROC_TYPE = "SQL_STORED_PROCEDURE"
 FN_TYPES = ("SQL_SCALAR_FUNCTION", "SQL_TABLE_VALUED_FUNCTION", "SQL_INLINE_TABLE_VALUED_FUNCTION")
 
 
@@ -223,14 +224,15 @@ def references(text, known, schemas):
     return refs, unresolved, remote
 
 
-def build_graph(defs, known_types, schemas, excluded_names, excluded_re):
-    """known_types: {lowercase name: type_desc} of every captured object.
+def build_graph(defs, known_types, schemas, excluded_names, excluded_re, include_procs=False):
+    """known_types: {lowercase name: type_desc} of every captured object (plus any simulator
+    stub objects: a known name is never treated as excluded).
     Returns {(schema,name): {"deps": set(lowercase), "excluded": set, "unresolved": set, "remote": set}}
-    for every view / function in defs."""
+    for every view / function in defs (and every stored procedure when include_procs)."""
     known = dict(known_types)
     graph = OrderedDict()
     for key, d in defs.items():
-        if d["type"] != "VIEW" and d["type"] not in FN_TYPES:
+        if d["type"] != "VIEW" and d["type"] not in FN_TYPES and not (include_procs and d["type"] == PROC_TYPE):
             continue
         if d["text"] is None:
             graph[key] = {"deps": set(), "excluded": set(), "unresolved": set(), "remote": set()}
