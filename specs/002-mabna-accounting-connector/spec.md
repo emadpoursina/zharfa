@@ -17,8 +17,8 @@
 Development decisions. These supersede the 2026-11-14 entry below for development work:
 - Development runs offline against the local SQL Server simulator (`deploy/mabna-sim/`, synthetic data). The schema is captured on-site as catalog metadata only; no business rows are read or stored.
 - The live server is read only on-site, by the developer, following `onsite-checklist.md`. Nothing from it is committed.
-- Value probes that read real values need the owner's decision. Not approved yet; the checklist skips them until then.
-- Taking schema metadata off-site needs the company's confirmation. **Pending.**
+- Value probes that read real values: approved by the owner on 2026-11-14. P1–P10 ran on-site and returned aggregates only; the company's 2026-11-15 off-site approval covers their results, which stay gitignored and are never committed.
+- Taking schema metadata off-site: approved by the company on 2026-11-15; scope covers schema captures, view/procedure definitions, value-probe aggregates and code lists; these stay gitignored (`scratch/` and `deploy/mabna-sim/generated/`) and are never committed.
 - App-side guards (table allowlist with hard exclusions, SELECT-only query builder, write-permission check, rolled-back transactions) are secondary. The primary control is a server-side read-only login.
 
 ### Session 2026-11-14
@@ -109,10 +109,10 @@ For the chosen first report, the Zharfa API returns totals that match the same q
 Questions 2 and 3 are superseded by the 2026-11-14 decision (live read-only access, no restored copy). Question 1 is still open and blocks the first plan.
 
 1. **First report.** Which accounting report comes first? Candidates: receivables aging, cash received by period, sales revenue by period, voucher balances by account.
-2. **Restore source and version.** Who provides the `COPY_ONLY` backup, and what is the SQL Server version? A SQL 2005 or 2008 backup may not restore into a Docker image. The schema notes give a 2017-or-older fallback, but this needs checking against the actual backup. If it fails, the agent route (a Windows-side extract) is the fallback.
-3. **Permission to hold the copy.** Is the owner allowed to keep a copy of company data on the development Mac?
-4. **Cheque states.** Which `ChqStateValue` values count as cash received?
-5. **Cancelled and returned invoices.** How are they treated in revenue and receivables?
+2. **Restore source and version.** Who provides the `COPY_ONLY` backup, and what is the SQL Server version? A SQL 2005 or 2008 backup may not restore into a Docker image. The schema notes give a 2017-or-older fallback, but this needs checking against the actual backup. If it fails, the agent route (a Windows-side extract) is the fallback. **Superseded** (2026-11-14: live read-only access, no restore).
+3. **Permission to hold the copy.** Is the owner allowed to keep a copy of company data on the development Mac? **Superseded** (2026-11-14: no copy is held; off-site schema metadata and aggregates approved 2026-11-15).
+4. **Cheque states.** Which `ChqStateValue` values count as cash received? **Partly answered** (2026-11-15 capture): Mabna's own rule counts the paid states as cash, with a stricter set for direct-collection instruments. Owner decides whether the endorsed-out state and credit-note receipts count as cash, and the date basis.
+5. **Cancelled and returned invoices.** How are they treated in revenue and receivables? **Partly answered** (2026-11-15 capture): cancelled invoices have no status code; their items are deleted, so `vAllSls` drops them. Returns are negative `vAllSls` lines and are not counted twice. Owner decides gross or net, the return month, purchase returns, and tax.
 6. **Roles.** Which Zharfa roles may see accounting figures? Demo 1 has only Manager and Admin.
 7. **Cloud AI.** May real accounting data go to the cloud AI provider, or is the AI restricted to aggregated figures? Default in this draft: no raw rows and no real data to a cloud provider.
 8. **Payables and purchases.** Are they in scope now? Demo 1 and the PRD defer them.

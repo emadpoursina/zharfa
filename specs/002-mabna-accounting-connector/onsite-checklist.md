@@ -14,8 +14,8 @@ Legend: **Who** = Dev (runs it), Owner (decides or watches). **OPEN** = depends 
 - [ ] **Dev** The three scripts exist in `scratch/` and have been dry-run against the simulator. Pass: no errors, output folder produced.
 - [ ] **Dev** `deploy/.env` holds the live connection string (`ConnectionStrings__...`), is gitignored, and was never committed. Pass: `git check-ignore deploy/.env` prints the path.
 - [ ] **Dev** An empty, dated output folder is prepared under `scratch/` (for example `scratch/onsite-YYYY-MM-DD/`).
-- [ ] **Owner** The company allows schema metadata (catalog, columns, partition row counts) to leave the site. Pass: confirmed before the visit.
-- [ ] **Owner** OPEN — owner decision: whether any value probe (`scratch/mabna-value-probes.sql`) may run at all. Pass: explicit yes per probe set; otherwise skip section "value probes" and record "not approved".
+- [x] **Owner** The company allows schema metadata (catalog, columns, partition row counts) to leave the site. Approved 2026-11-15.
+- [x] **Owner** Value probes (`scratch/mabna-value-probes.sql`) approved by the owner on 2026-11-14. P1–P10 were run on-site; they returned aggregates only. Results stay gitignored and are never committed.
 - [ ] **Dev** Remember: no write attempts against Mabna, ever. Write-denial is proven by permission metadata and the connector guard (section 3), not by trying.
 
 ## 2. Schema drift check
@@ -63,7 +63,7 @@ Demo 1 has `GET /api/admin/reconciliation` (admin only; query params `from`, `to
 
 - [ ] **Dev** `git status` shows no Mabna output, no `deploy/.env`, no tracked changes beyond intended docs. Pass: clean.
 - [ ] **Dev** `git check-ignore scratch/` prints `scratch/` (it is gitignored); `deploy/.env` is ignored too.
-- [ ] **Dev** Output folders under `scratch/` hold metadata only (schema capture; probe results only if approved). No row extracts anywhere on the laptop. Pass: owner agrees on a quick listing.
+- [ ] **Dev** Output folders under `scratch/` hold metadata only (schema capture; value-probe aggregates, approved 2026-11-14). No row extracts anywhere on the laptop. Pass: owner agrees on a quick listing.
 - [ ] **Dev** Close the live connection and remove the live string from the shell history/environment; keep `deploy/.env` only if the owner allows it on the laptop.
 - [ ] **Dev** Session log written to `scratch/onsite-YYYY-MM-DD/log.md` (gitignored; also see `scratch/mabna-onsite-run.md`): date, who attended, checks run, pass/fail per check, drift found, reconciliation period and filter, totals difference (only if allowed), owner decisions made, follow-ups.
 - [ ] **Owner** What may leave the site: schema metadata (approved), the log with pass/fail, and aggregates only if the owner allowed them. Nothing else.
