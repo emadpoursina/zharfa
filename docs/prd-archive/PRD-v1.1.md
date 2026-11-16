@@ -1,3 +1,5 @@
+> **ARCHIVED — not scope authority.** Vision reference only (v1.1). The governing PRD is [`zharfa-prd.md`](../../zharfa-prd.md) v3.0 with its phase plan [`zharfa-prd.phases.md`](../../zharfa-prd.phases.md). Do not plan or build from this file.
+
 # Product Requirements Document (PRD)
 # Pharmaceutical Distribution Business Intelligence & AI Platform
 

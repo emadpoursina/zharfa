@@ -1,0 +1,64 @@
+# Zharfa - local Mabna SIMULATOR (offline development only).
+#
+# A SQL Server 2019 container named like the real legacy database
+# (TotalSystem) holding the captured SCHEMA and SYNTHETIC DEMONSTRATION DATA.
+# It never connects to the real company server. Nothing here is real data.
+#
+#   docker compose -f deploy/docker-compose.mabna-sim.yml up -d
+#   docker compose -f deploy/docker-compose.mabna-sim.yml down       # keep data
+#   docker compose -f deploy/docker-compose.mabna-sim.yml down -v    # reset
+#
+# Apple Silicon: the image is x86-64 only. Enable Docker Desktop >
+# Settings > General > "Use Rosetta for x86_64/amd64 emulation on Apple
+# Silicon" and give the Docker VM >= 4 GB RAM. Microsoft does not officially
+# support Rosetta. FALLBACK if 2019 misbehaves: use image
+# mcr.microsoft.com/mssql/server:2022-latest and run
+#   ALTER DATABASE TotalSystem SET COMPATIBILITY_LEVEL = 150;
+# (the 2022 sqlcmd lives in /opt/mssql-tools18; run-init.sh detects it).
+#
+# Secrets come from deploy/.env (gitignored); no default password is committed.
+# See deploy/mabna-sim/README.md.
+
+name: zharfa-mabna-sim
+
+services:
+  mabna-sim:
+    image: mcr.microsoft.com/mssql/server:2019-latest
+    platform: linux/amd64
+    environment:
+      ACCEPT_EULA: "Y"
+      MSSQL_PID: Developer
+      MSSQL_SA_PASSWORD: ${MABNA_SIM_SA_PASSWORD:?set MABNA_SIM_SA_PASSWORD in deploy/.env}
+    ports:
+      - "127.0.0.1:${MABNA_SIM_PORT:-14330}:1433"
+    volumes:
+      - mabna-sim-data:/var/opt/mssql
+    healthcheck:
+      test: ["CMD-SHELL", "S=$$(ls /opt/mssql-tools*/bin/sqlcmd | head -n1); $$S -C -S localhost -U sa -P \"$$MSSQL_SA_PASSWORD\" -Q 'SELECT 1' -b -o /dev/null"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
+    restart: unless-stopped
+
+  # One-shot: runs deploy/mabna-sim/generated/*.sql and init/*.sql in filename
+  # order. Skips schema+seed when TotalSystem already exists (use `down -v`).
+  mabna-sim-init:
+    image: mcr.microsoft.com/mssql/server:2019-latest
+    platform: linux/amd64
+    user: root
+    depends_on:
+      mabna-sim:
+        condition: service_healthy
+    environment:
+      SA_PASSWORD: ${MABNA_SIM_SA_PASSWORD:?set MABNA_SIM_SA_PASSWORD in deploy/.env}
+      RO_PASSWORD: ${MABNA_SIM_RO_PASSWORD:?set MABNA_SIM_RO_PASSWORD in deploy/.env}
+    volumes:
+      - ./mabna-sim/run-init.sh:/run-init.sh:ro
+      - ./mabna-sim/init:/init/generic:ro
+      - ./mabna-sim/generated:/init/generated:ro
+    entrypoint: ["/bin/bash", "/run-init.sh"]
+    restart: "no"
+
+volumes:
+  mabna-sim-data:

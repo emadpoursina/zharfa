@@ -15,3 +15,5 @@ validation_commands:
   # Desktop shell (WPF + WebView2, net10.0-windows): compiles on any OS via
   # EnableWindowsTargeting; running requires Windows + WebView2 Runtime.
   - PATH="$HOME/.dotnet:$PATH" DOTNET_SYSTEM_GLOBALIZATION_INVARIANT=1 dotnet build desktop/Zharfa.Desktop/Zharfa.Desktop.csproj
+  # Backend unit tests (xunit, spec 002): pure logic only, no database or network.
+  - PATH="$HOME/.dotnet:$PATH" DOTNET_SYSTEM_GLOBALIZATION_INVARIANT=1 dotnet test backend/Zharfa.Api.Tests/Zharfa.Api.Tests.csproj
