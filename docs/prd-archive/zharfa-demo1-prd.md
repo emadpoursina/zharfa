@@ -1,10 +1,12 @@
+> **ARCHIVED — not scope authority.** Demo 1 history (v2.0, built and accepted). The governing PRD is [`zharfa-prd.md`](../../zharfa-prd.md) v3.0 with its phase plan [`zharfa-prd.phases.md`](../../zharfa-prd.phases.md). Do not plan or build from this file.
+
 # Zharfa — Demo 1 PRD (Demo-Sized Rewrite)
 
 **Project:** Zharfa
 **Document version:** 2.0 Demo 1
 **Status:** Demo scope — overrides MVP scope for Demo 1 only
-**Supersedes for Demo 1:** `PRD.md` v1.1 §12 MVP Scope + §14 Acceptance Criteria
-**Full vision retained in:** `PRD.md` (v1.1, reference only — not Demo 1 scope)
+**Supersedes for Demo 1:** `PRD-v1.1.md` v1.1 §12 MVP Scope + §14 Acceptance Criteria
+**Full vision retained in:** `PRD-v1.1.md` (v1.1, reference only — not Demo 1 scope)
 **Scope:** Single demo path on synthetic data. No Mabna integration in Demo 1.
 
 ---

@@ -2,7 +2,7 @@
 
 **Branch**: `001-zharfa-demo1` | **Date**: 2026-10-30 | **Spec**: [spec.md](spec.md)
 
-**Input**: Feature specification from `/specs/001-zharfa-demo1/spec.md` (Demo 1 PRD v2.0 governing; PRD.md v1.1 deferred reference; AGENTS.md binding; locked single-path decisions stamped).
+**Input**: Feature specification from `/specs/001-zharfa-demo1/spec.md` (Demo 1 PRD v2.0 governing; docs/prd-archive/PRD-v1.1.md deferred reference; AGENTS.md binding; locked single-path decisions stamped).
 
 **Note**: This plan is the `/speckit.plan` output. Constitution file `.specify/memory/constitution.md` is an unratified placeholder, so authority is the Demo 1 PRD + AGENTS.md (recorded in the Constitution Check gate below). ANALYZE: yes — cross-artifact analysis runs after tasks (see Completion Report).
 

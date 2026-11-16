@@ -6,21 +6,29 @@
   distribution company. Persian (RTL) dashboards and an AI Business Analyst
   layered *around* the existing operational system (`سیستم جامع شرکت مبنا`) —
   never replacing it and never writing to it.
-- **Name:** the project is **Zharfa**; the PRDs carry the working product name
-  "Pharmecy Analytics". Use *Zharfa* in repo docs, cards and commit messages.
-- **Scope authority:** `zharfa-demo1-prd.md` (v2.0 Demo 1) governs Demo 1 and
-  overrides `PRD.md` (v1.1 full vision) wherever they conflict. `PRD.md` is
-  reference for deferred work only.
-- **Stack (locked by Demo 1 PRD §6):** React + TypeScript (+ Tailwind or
-  equivalent), ASP.NET Core Web API, PostgreSQL, WebView2 + .NET thin desktop
-  shell, Docker Compose. Deferred, not decided: Metabase, Wren AI, a second AI
-  provider (local Ollama seam preserved), Mabna SQL Server connector.
+- **Name:** the project is **Zharfa**; older PRDs carry the working product
+  name "Pharmacy Analytics". Use *Zharfa* in repo docs, cards and commit messages.
+- **Scope authority:** `zharfa-prd.md` (v3.0, 2026-11-16) governs all work
+  after Demo 1: three releases (1 Vendors & Purchasing — detailed; 2 Pharmacy
+  Sales and 3 Warehouse — outlined) on read-only Mabna data. Its phase plan
+  `zharfa-prd.phases.md` orders Release 1 into feature runs
+  (`phase: zharfa-prd.phases.md#N`). It is the only PRD in scope. Everything
+  in `docs/prd-archive/` (Demo 1 PRD v2.0, PRD v1.1, the three-release
+  direction draft) is history/reference and yields to `zharfa-prd.md`. Spec 002 is superseded: its connector,
+  guards and simulator are the Release 1 foundation, and its receivables/cash
+  stories move to Release 2.
+- **Stack (locked since Demo 1, confirmed by `zharfa-prd.md` §9):** React +
+  TypeScript (+ Tailwind or equivalent), ASP.NET Core Web API, PostgreSQL,
+  WebView2 + .NET thin desktop shell, Docker Compose, read-only Mabna SQL
+  Server connector, local AI via Ollama (default) with the cloud provider
+  opt-in. Not used: Metabase, Wren AI.
 - **Layout:** app code scaffolded by the bootstrap job — `frontend/` (React +
   TypeScript + Vite + Tailwind, Persian RTL), `backend/Zharfa.Api` (ASP.NET
   Core Web API), `desktop/Zharfa.Desktop` (WebView2 + WPF thin shell),
   `db/migrations` + `db/seed` (PostgreSQL, synthetic demo data),
   `deploy/` (docker-compose.yml, `.env.example`, nginx reverse proxy).
-  Docs: `zharfa-demo1-prd.md` + `PRD.md` at the root (tracked), `README.md`,
+  Docs: `zharfa-prd.md` + `zharfa-prd.phases.md` (governing),
+  `docs/prd-archive/` (superseded PRDs, history only), `README.md`,
   `AGENTS.md`, `.ainative/project.yaml`, Spec Kit layout in `.specify/` +
   `.pi/prompts/speckit.*.md`. `scratch/` is for throwaway notes and is
   gitignored. Spec 002 adds `deploy/mabna-sim/` (offline Mabna SQL Server
@@ -34,8 +42,10 @@
   state runs them for managed work.
 - For a `feature`, follow the spec/plan/tasks workflow and its reviews. A
   `change` is already specified; a `job` runs only its named skill.
-- Demo 1 is done when its §4 five observable checks hold — that is the only
-  DoD; everything else is pilot scope.
+- Each Release 1 phase is done when its exit criteria in
+  `zharfa-prd.phases.md` hold; phases run strictly in order, one feature run
+  each. Release 1 is done after Phase 7 (go-live). Demo 1 was done when its
+  §4 five checks held (history).
 - Ask rather than guessing when a consequential project decision is unclear.
 - Update related project documentation when behavior or interfaces change.
 
@@ -52,23 +62,35 @@
   interpretation.
 - Secrets (AI keys, DB credentials) live in server env / Docker secrets only —
   never in the frontend bundle, the repo, or logs.
-- Synthetic data must be labeled as demonstration data everywhere; real
-  company data is explicitly out of scope for Demo 1.
+- Real and synthetic data never mix: production installs show real data only;
+  demo installs label everything as demonstration data; the AI uses one
+  dataset per install. Real Mabna data never leaves the company site or enters
+  the repo; development uses `deploy/mabna-sim/`.
+- Mabna is read-only: the read-only login is the primary control; the
+  connector's SELECT-only guard and table allowlist are secondary. Never read
+  Mabna's `HOST_ID()`-filtered report views on live Mabna.
+- Real data goes to a cloud AI provider only as aggregates, and only after an
+  Admin enables it with recorded owner approval; the local model is default.
 - Prefer existing project abstractions; justify new dependencies.
 
 ## Project-specific notes
 
-- Demo 1 is single-path by design: custom React dashboard (no Metabase), one
-  Business Analyst agent (no Platform Assistant), one cloud AI provider,
-  browser-print as the only export.
-- The schema reserves empty `SourceRecord/SyncJob/SyncLog` tables so later
-  Mabna integration does not require a redesign; Demo 1 does not connect to
-  Mabna at all.
-- One reconciliation check ships in Demo 1: API sales/receivables totals must
-  match the same query against the DB views; a mismatch blocks sign-off.
-- Financial integrity for Demo 1 is limited to three documented formulas
-  (sales revenue, cash received, receivables balance) — never equate sales
-  revenue with cash received.
+- Mabna data reaches Zharfa through a nightly incremental sync plus an Admin
+  "sync now" into PostgreSQL via the reserved `SourceRecord/SyncJob/SyncLog`
+  tables; reports read the synced copy, never Mabna per request.
+- Reports are never built on assumed Mabna structures: verify the source
+  tables on-site (`specs/002-mabna-accounting-connector/onsite-checklist.md`)
+  before any formula uses them.
+- Every reconciled metric must match the same query against the source data;
+  a mismatch blocks sign-off. Release 1 reconciles purchase totals and vendor
+  balances.
+- Keep financial formulas separate and documented: purchases vs payments vs
+  vendor balance (Release 1); sales revenue vs cash received vs receivables
+  balance (Release 2, from Demo 1/spec 002). Never present one as another, and
+  never present a price difference as profit.
+- Roles are permission sets enforced server-side; Release 1 seeds Admin,
+  Management, Purchasing and Finance (vendor financials: Management + Finance).
+- Release 1 deploys to the company LAN server only (HTTPS, no remote access).
 
 ## Repository commands
 
@@ -96,9 +118,10 @@ dotnet test backend/Zharfa.Api.Tests                              # backend unit
 
 - Replacing Mabna, editing operational transactions, writes to the legacy
   database, ERP functionality, automated accounting or business decisions.
-- Purchases / suppliers / payables modules, full rankings, advanced
-  filtering, expiry-batch workflow, Excel export, custom PDF pipeline.
-- Second AI provider implementation, Platform Assistant, MCP tool catalog,
-  AI insights/anomaly engine, Metabase and Wren AI evaluations.
-- Native mobile apps, PWA/Capacitor packaging, push, offline, biometric
-  auth, English UI (MVP).
+- In Release 1: sales, pharmacy, receivables and warehouse/inventory modules
+  on real data (Releases 2–3), Sales/Warehouse/Viewer roles, cross-domain
+  reports, custom PDF pipeline (browser-print only).
+- Platform Assistant, MCP tool catalog, AI anomaly/pattern engine, Metabase
+  and Wren AI.
+- Remote/VPN/internet access, native mobile apps, PWA/Capacitor packaging,
+  push, offline, biometric auth, English UI.

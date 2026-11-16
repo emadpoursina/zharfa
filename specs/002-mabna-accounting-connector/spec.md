@@ -4,11 +4,11 @@
 
 **Created**: 2026-11-11
 
-**Status**: Draft — open questions below need the owner's decisions before plan
+**Status**: Superseded 2026-11-16 by `zharfa-prd.md` v3.0 — its connector, guards and simulator are the Release 1 foundation; its receivables/cash stories (US3, open questions 4–5) move to Release 2 (F21). Not a scope source.
 
 **Input**: Read-only analytics over Mabna (`TotalSystem`, SQL Server 2019) for the accounting sections of the ERP, read live with a read-only login.
 
-**Scope authority**: `zharfa-demo1-prd.md` v2.0 governs Demo 1 and excludes Mabna and accounting. This feature is a post-Demo-1 phase (PRD §10 item 10, §11 phases 6–8). `PRD.md` v1.1 §551–582 and NFR-07 (read-only legacy integration) bind this feature. `AGENTS.md` rules bind every decision.
+**Scope authority**: `docs/prd-archive/zharfa-demo1-prd.md` v2.0 governs Demo 1 and excludes Mabna and accounting. This feature is a post-Demo-1 phase (PRD §10 item 10, §11 phases 6–8). `docs/prd-archive/PRD-v1.1.md` v1.1 §551–582 and NFR-07 (read-only legacy integration) bind this feature. `AGENTS.md` rules bind every decision.
 
 ## Clarifications
 
@@ -123,5 +123,5 @@ Questions 2 and 3 are superseded by the 2026-11-14 decision (live read-only acce
 ## Assumptions
 
 - The owner runs the Docker SQL Server on Apple silicon using an `linux/amd64` image under emulation. This is slower but works.
-- `zharfa-demo1-prd.md` is not edited by this feature. A separate PRD addendum may be needed once the first report is chosen.
+- `docs/prd-archive/zharfa-demo1-prd.md` is not edited by this feature. A separate PRD addendum may be needed once the first report is chosen.
 - Work is submitted as a `feature` on the Hermes `zharfa` Kanban board. This spec is the draft for that card and has not been reviewed by the board yet.

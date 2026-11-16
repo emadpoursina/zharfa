@@ -8,7 +8,7 @@
 
 **Input**: Demo 1 Zharfa analytics platform single demo path synthetic data — Persian RTL dashboard (sales, inventory alerts, receivables) + one AI Business Analyst + Manager/Admin RBAC + Docker Compose install, per zharfa-demo1-prd.md v2.0 governing scope.
 
-**Scope authority**: `zharfa-demo1-prd.md` v2.0 Demo 1 governs; `PRD.md` v1.1 is reference only for deferred work. `AGENTS.md` rules bind every decision. Locked orchestrator decisions (single-path: custom React dashboard only, one Business Analyst agent only, one cloud AI provider with Ollama seam preserved-not-implemented, browser-print only; no Mabna connection; three financial formulas only; Persian-first RTL; RBAC Manager+Admin server-side; secrets server-env only; same KPI definitions everywhere; AI cites period+filters+view or says unavailable; host gaps planned around) are stamped into this spec and all downstream artifacts.
+**Scope authority**: `docs/prd-archive/zharfa-demo1-prd.md` v2.0 Demo 1 governs; `docs/prd-archive/PRD-v1.1.md` v1.1 is reference only for deferred work. `AGENTS.md` rules bind every decision. Locked orchestrator decisions (single-path: custom React dashboard only, one Business Analyst agent only, one cloud AI provider with Ollama seam preserved-not-implemented, browser-print only; no Mabna connection; three financial formulas only; Persian-first RTL; RBAC Manager+Admin server-side; secrets server-env only; same KPI definitions everywhere; AI cites period+filters+view or says unavailable; host gaps planned around) are stamped into this spec and all downstream artifacts.
 
 ## Clarifications
 
