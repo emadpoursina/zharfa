@@ -34,7 +34,7 @@ Listens on `127.0.0.1:14330` (`MABNA_SIM_PORT`). Connection string for the
 connector: `Server=127.0.0.1,14330;Database=TotalSystem;User Id=zharfa_ro;Password=...;TrustServerCertificate=True`.
 
 The one-shot `mabna-sim-init` container runs `generated/*.sql` and `init/*.sql`
-merged in filename order: `00-database`, `01-schema`, `02-seed` (generated),
+merged in filename order: `00-database`, `01-schema`, `01a-stubs` (only if any), `02a-lookups`, `02b-seed`, `03-objects` (functions + views) (generated),
 `90-readonly-login` (tracked). If `TotalSystem` already exists only `9*` files
 are re-run, so `up` is idempotent; use `down -v` to rebuild.
 
@@ -49,23 +49,101 @@ PROCEDURE), matching production rights (FR-03). Run the connector as
 
 1. On-site run `scratch/mabna-schema-capture.sql` (sqlcmd, `-s"|" -W`), copy the
    output text file to the dev machine.
-2. `python3 deploy/mabna-sim/gen_schema.py path/to/capture.txt` writes
-   `generated/00-database.sql` (collation preserved) and `generated/01-schema.sql`
-   (tables, types, nullability, identity, defaults, PKs, FKs). Views, indexes and
-   check constraints are not recreated; FKs to tables outside the capture are skipped.
-3. Copy `example/seed-map.example.json` to `generated/map.json`, set real table
-   and column names / status codes, then
-   `python3 deploy/mabna-sim/gen_seed.py --map deploy/mabna-sim/generated/map.json`.
-4. `docker compose -f deploy/docker-compose.mabna-sim.yml down -v && ... up -d`.
+2. `python3 deploy/mabna-sim/gen_schema.py path/to/capture.txt` writes into
+   `generated/`: `00-database.sql` (collation, compat level, recovery, snapshot
+   isolation as captured), `01-schema.sql` (tables, column collations, identity,
+   defaults, nullability, PKs, indexes, FKs between captured tables),
+   `01a-stubs.sql` (minimal stub tables, key columns only and typed from the
+   referencing columns, for FK targets outside the capture; FKs to
+   `scu*`/`msg*`/user/rights tables are dropped; `--outside-fk drop` drops all
+   of them) and `03-views.sql` (only views whose referenced objects are all
+   captured; the others are listed as comments). Both the plain and the
+   `===== result set N =====` capture formats are accepted.
+3. `python3 deploy/mabna-sim/gen_seed.py --capture path/to/capture.txt [--map deploy/mabna-sim/generated/map.json]`
+   writes `generated/02-seed.sql` for every created table: captured row count
+   x 1% (clamped to 5..2000 rows), FK order, identity, unique keys. The
+   optional gitignored `map.json` overrides single columns (`choices`, `cycle`,
+   `null_rate`) and row counts; see `gen_seed.py`. Text in `varchar` columns is
+   folded to what CP1256 can hold (Persian yeh becomes Arabic yeh, Persian
+   digits ASCII); `nvarchar` keeps full Persian.
+### Full capture: dependency closure (recommended)
+
+With the full on-site captures (`schema-capture-full.txt`, `definitions-full.sql`,
+`lookups.txt`, `row-counts-full.txt`; first capture kept as `--base-capture`):
+
+```bash
+D=scratch/mabna-capture-output
+python3 deploy/mabna-sim/gen_schema.py $D/schema-capture-full.txt \
+  --definitions $D/definitions-full.sql --base-capture $D/schema-capture.txt \
+  --lookups $D/lookups.txt --row-counts $D/row-counts-full.txt      # [--roots a,b,c]
+python3 deploy/mabna-sim/check_order.py                              # static order/FK checks (no SQL engine)
+python3 deploy/mabna-sim/gen_seed.py --capture $D/schema-capture-full.txt \
+  --selection deploy/mabna-sim/generated/selection.json --row-counts $D/row-counts-full.txt \
+  --lookups $D/lookups.txt [--scenario deploy/mabna-sim/generated/scenario.py] \
+  [--map deploy/mabna-sim/generated/map.json]
+```
+
+`gen_schema.py` tokenizes the view/function definitions (comments, strings and
+brackets handled), follows references transitively from the root views
+(default: the views of `--base-capture`), and keeps only real captured objects.
+It creates: the base tables, the lookup tables, every referenced table, the FK
+parents of all of those (transitively), then functions and views in dependency
+order (`03-objects.sql`). Objects with an unreadable (encrypted/NULL)
+definition, a reference to a `scu*`/`msg*`/user/rights table, a cross-database
+reference, or a dependency on such an object are blocked and reported, never
+created. Stored procedures and triggers are never created. `selection.json`
+lists what was kept (gen_seed uses it). `02a-lookups.sql` loads the code/label
+tables with their real codes (reference data, not business rows) before the
+seed. Nothing here needs, or may start, a download or a container; run
+`check_order.py` before any load test.
+
+`gen_seed.py --lookups` keeps the lookup tables out of the seed (02a loads them)
+but feeds their real codes to every FK column. Without `--scenario` every other
+table is filled generically (about 1% of its real row count, 5..2000 rows).
+
+`--scenario FILE` points at a **gitignored** python file (it names real tables and
+columns, so it lives in `generated/`, FR-02) that defines `TABLES` (tables it
+builds), optional `ROW_COUNTS` and `build_all(ctx)`. `ctx` gives `rng` (fixed
+seed), `rows(name)` / `cols(name)` of the tables generated so far (lookups and
+generic parents), and Jalali helpers `j2g`, `g2j`, `jadd`. `build_all` returns
+`{table: [partial row dicts]}`; seedgen fills every other column (FK parent,
+default, NULL or a typed value). Tables that are FK children of scenario tables
+are generated after it. This is how the demo company is made internally
+consistent (customers, invoices with items, cancelled invoices, returns, opening
+invoices, receipts with allocations, cheques with a state history, bounced
+cheques, report scratch tables). Mind the letters: the seed text uses Arabic ي
+and Persian ک only; Arabic ك appears only in cheque descriptions, as in the real
+data. Free-text columns the scenario fills carry the marker "(داده نمايشي)".
+
+Some captured report views read per-host report scratch tables and filter on
+`hostid = HOST_ID()`, the client process id, which cannot be known at seed time.
+The seed stores `hostid = 1` rows, so those views return no rows on a normal
+connection (exactly like the real database before a report is run). To test them,
+as `sa` inside a transaction you roll back, set the scratch tables' `hostid` to
+`CAST(HOST_ID() AS int)`; the exact table and view names are in
+`generated/03-objects.sql` (gitignored). The other views return rows.
+The lookup load runs with constraints unchecked, so a few FKs show as "not
+trusted" in `sys.foreign_keys`; they are valid.
+
+4. (Legacy path.) `docker compose -f deploy/docker-compose.mabna-sim.yml down -v && ... up -d`.
 
 Try the toolchain without a capture:
 `python3 deploy/mabna-sim/gen_schema.py deploy/mabna-sim/example/schema-capture.example.txt`
-then `python3 deploy/mabna-sim/gen_seed.py` (made-up `SimInvoice` etc.).
+then `python3 deploy/mabna-sim/gen_seed.py` (made-up `SimInvoice` etc., legacy mode) or
+`python3 deploy/mabna-sim/gen_seed.py --capture deploy/mabna-sim/example/schema-capture.example.txt`.
 The example is **PENDING real capture**; replace it before relying on the sim.
 
 ## Seed edge cases
 
-Jalali dates as text `yyyy/mm/dd` (some with Persian digits) and numeric
-`yyyymmdd` side by side; Arabic ي/ك mixed with Persian ی/ک; normal, cancelled
-and returned invoices (both sign conventions); uncleared, cleared and bounced
-cheques; NULL dates, notes and phones.
+Legacy/example mode: Jalali dates as text `yyyy/mm/dd` (some with Persian digits)
+and numeric `yyyymmdd` side by side; Arabic ي/ك mixed with Persian ی/ک; normal,
+cancelled and returned invoices (both sign conventions); uncleared, cleared and
+bounced cheques; NULL dates, notes and phones.
+
+Scenario (captured schema): per-table date formats as measured on the real
+database (`yyyymmdd`, `yymmdd`, `yy/mm/dd`, `//` for "no date", `Date_Calc`
+`yyyymmdd` consistent with them, years 1399 to 1406); sales operation codes 5
+(sale), 4 (opening), 33 (return, negative) and 13 (bounced cheque); cancelled
+invoices as zeroed headers without items; cheque states R P Q X B H N D T V with
+valid transitions, incoming and outgoing (`Input = 0`) instruments; payment
+types 1/17/3 (cash-like), 16 and 33 (not cash), 101/102/14/15 and 13.

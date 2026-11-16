@@ -7,7 +7,7 @@ SQLCMD=$(ls /opt/mssql-tools*/bin/sqlcmd | head -n1)
 run() { "$SQLCMD" -C -S mabna-sim -U sa -P "$SA_PASSWORD" -b -f 65001 "$@"; }
 
 exists=$(run -h -1 -W -Q "SET NOCOUNT ON; SELECT COUNT(*) FROM sys.databases WHERE name='TotalSystem'" | tr -d '[:space:]')
-files=$(ls /init/generated/*.sql /init/generic/*.sql 2>/dev/null | awk -F/ '{print $NF" "$0}' | sort | cut -d' ' -f2-)
+files=$(ls /init/generated/*.sql /init/generic/*.sql 2>/dev/null | awk -F/ '{print $NF" "$0}' | LC_ALL=C sort | cut -d' ' -f2-)
 if ! ls /init/generated/0*.sql >/dev/null 2>&1; then
   echo "WARNING: deploy/mabna-sim/generated/ has no schema. Run deploy/mabna-sim/gen_schema.py first (see README)." >&2
 fi
