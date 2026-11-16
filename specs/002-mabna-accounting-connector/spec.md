@@ -19,6 +19,7 @@ Development decisions. These supersede the 2026-11-14 entry below for developmen
 - The live server is read only on-site, by the developer, following `onsite-checklist.md`. Nothing from it is committed.
 - Value probes that read real values: approved by the owner on 2026-11-14. P1–P10 ran on-site and returned aggregates only; the company's 2026-11-15 off-site approval covers their results, which stay gitignored and are never committed.
 - Taking schema metadata off-site: approved by the company on 2026-11-15; scope covers schema captures, view/procedure definitions, value-probe aggregates and code lists; these stay gitignored (`scratch/` and `deploy/mabna-sim/generated/`) and are never committed.
+- Mabna's per-user report views (filled by its report procedures) filter on `HOST_ID()`, the client's process id, so a read-only client sees no rows unless that same process ran the writing procedure. Zharfa does not read them on live Mabna (checked in the simulator, 2026-11-16). See FR-09.
 - App-side guards (table allowlist with hard exclusions, SELECT-only query builder, write-permission check, rolled-back transactions) are secondary. The primary control is a server-side read-only login.
 
 ### Session 2026-11-14
@@ -88,6 +89,7 @@ For the chosen first report, the Zharfa API returns totals that match the same q
 - **FR-06**: All accounting figures are labeled as **real company data** and visible only to roles defined in the open questions. Demo 1 synthetic labeling is not reused for real data.
 - **FR-07**: No accounting data is sent to a cloud AI provider unless the owner explicitly approves it (see open questions).
 - **FR-08**: Sales revenue, cash received, and receivables balance remain three separate, documented formulas.
+- **FR-09**: Accounting figures are computed from base tables, or from views that do not filter on `HOST_ID()`. Mabna's per-user report views and the procedures that fill them are never read or run on live Mabna (the procedures write; the connector's SELECT-only guard blocks them). In the simulator those views are used only to compare Zharfa's results with Mabna's report logic.
 
 ## Success Criteria *(mandatory)*
 
