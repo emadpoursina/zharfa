@@ -6,10 +6,12 @@ using System.Threading.Tasks;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Zharfa.Api.Analytics;
+using Zharfa.Api.Platform;
 
 [ApiController]
 [Route("api/inventory")]
 [Authorize(Roles = "manager,admin")]
+[DemoOnly]
 public class InventoryController : ControllerBase
 {
     private readonly IInventoryAnalytics _inventoryAnalytics;

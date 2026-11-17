@@ -275,3 +275,19 @@ export function getJalaliMonthRange(offsetMonths: number): { from: string; to: s
 
   return { from, to };
 }
+
+/**
+ * Persian label for a Jalali month key «YYYY-MM» (Latin or Persian digits), for example «1405-06» → «شهریور ۱۴۰۵».
+ * Returns the key unchanged when it is not a valid month key.
+ */
+export function jalaliMonthKeyLabel(key: string): string {
+  const match = /^(\d{4})-(\d{1,2})$/.exec(toLatinDigits(key.trim()));
+  if (!match) {
+    return key;
+  }
+  const jm = parseInt(match[2], 10);
+  if (jm < 1 || jm > 12) {
+    return key;
+  }
+  return `${JALALI_MONTH_NAMES[jm - 1]} ${toPersianDigits(match[1])}`;
+}

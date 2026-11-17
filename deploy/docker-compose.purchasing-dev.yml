@@ -1,0 +1,36 @@
+# Zharfa - purchasing DEVELOPMENT override (spec 003, T074). SIMULATOR DATA ONLY.
+#
+# Use it on top of the base file together with the Mabna simulator
+# (deploy/docker-compose.mabna-sim.yml, deploy/mabna-sim/README.md):
+#
+#   docker compose -f deploy/docker-compose.yml -f deploy/docker-compose.purchasing-dev.yml up --build -d
+#
+# It runs the API in Development with demo data (synthetic only), mounts the simulator's
+# purchasing source map and allowlist read-only, and gives the dev-only sync knobs
+# (quickstart §0 and Flows 3-4). Never use it against real Mabna or a production install.
+# deploy/.env must still set ZHARFA_DATA_MODE=demo, which the base file requires.
+
+services:
+  api:
+    environment:
+      ASPNETCORE_ENVIRONMENT: Development
+      # Demo only: this override reads synthetic data. A production database refuses demo mode at startup.
+      Zharfa__DataMode: demo
+      # Container paths of the simulator's files mounted below. They sit in their own folder, not under the
+      # base file's read-only /etc/zharfa/mabna mount (deploy/mabna-config), so the two mounts never collide.
+      MabnaSync__SourceMapFile: /etc/zharfa/mabna-sim/purchase-source-map.json
+      MabnaSource__AllowlistFile: /etc/zharfa/mabna-sim/allowlist.txt
+      # Smaller pages so a simulator sync spans several pages (quickstart Flow 3). Blank in deploy/.env = 50 here.
+      Sync__PageSize: ${Sync__PageSize:-50}
+      # Dev only, honoured only in Development + demo: fail the run after this many tables (quickstart Flow 4b).
+      # Blank = no fault.
+      Sync__FaultInjection__FailAfterTables: ${Sync__FaultInjection__FailAfterTables:-}
+    volumes:
+      - type: bind
+        source: ./mabna-sim/generated/purchase-source-map.json
+        target: /etc/zharfa/mabna-sim/purchase-source-map.json
+        read_only: true
+      - type: bind
+        source: ./mabna-sim/generated/allowlist.txt
+        target: /etc/zharfa/mabna-sim/allowlist.txt
+        read_only: true

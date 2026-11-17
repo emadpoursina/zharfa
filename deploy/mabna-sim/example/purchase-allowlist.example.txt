@@ -1,0 +1,6 @@
+# Example allowlist for purchasing simulator / unit tests
+dbo.SimVendor
+dbo.SimProduct
+dbo.SimInvDoc
+dbo.SimRetDoc
+dbo.SimInvDocItem

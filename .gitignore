@@ -45,3 +45,7 @@ specs/*/evidence.md
 # Mabna simulator: anything derived from the real schema/data (FR-02)
 deploy/mabna-sim/generated/*
 !deploy/mabna-sim/generated/.gitkeep
+
+# Real Mabna source map and allowlist mounted read-only into the API container (spec 003, FR-005)
+deploy/mabna-config/*
+!deploy/mabna-config/.gitkeep

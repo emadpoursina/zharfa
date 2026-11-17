@@ -1,3 +1,5 @@
+import { toPersianDigits } from './jalali';
+
 /**
  * Persian number and currency formatting utilities using Intl.NumberFormat('fa-IR').
  * In-house implementation with zero external dependencies.
@@ -77,4 +79,39 @@ export function faPercent(value: number | string | null | undefined): string {
     return '—';
   }
   return `${percentFormatter.format(num)}٪`;
+}
+
+const bigIntFormatter = new Intl.NumberFormat('fa-IR', { useGrouping: true });
+
+/**
+ * Formats an exact decimal string from the API (for example "1250000000.0000") as Rial with Persian
+ * digits and grouping, followed by «ریال». Works on the string, so no float rounding is involved.
+ * Fractions are shown only when they are not zero. `signed` adds «+» to positive values (comparisons).
+ * Example: "-50.0000" → «−۵۰ ریال», "1250000000.0000" → «۱٬۲۵۰٬۰۰۰٬۰۰۰ ریال»
+ */
+export function faRialFromDecimal(
+  value: string | null | undefined,
+  options: { signed?: boolean } = {},
+): string {
+  if (value === null || value === undefined) {
+    return '—';
+  }
+  const match = /^(-?)(\d+)(?:\.(\d+))?$/.exec(value.trim());
+  if (!match) {
+    return '—';
+  }
+  const [, sign, integerPart, fractionRaw = ''] = match;
+  const fraction = fractionRaw.replace(/0+$/, '');
+  const isZero = /^0+$/.test(integerPart) && fraction.length === 0;
+  const integerText = bigIntFormatter.format(BigInt(integerPart));
+  const fractionText = fraction.length > 0 ? `٫${toPersianDigits(fraction)}` : '';
+
+  let signText = '';
+  if (sign === '-' && !isZero) {
+    signText = '−';
+  } else if (options.signed && !isZero) {
+    signText = '+';
+  }
+
+  return `${signText}${integerText}${fractionText} ریال`;
 }

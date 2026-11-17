@@ -68,3 +68,41 @@ Demo 1 has `GET /api/admin/reconciliation` (admin only; query params `from`, `to
 - [ ] **Dev** Session log written to `scratch/onsite-YYYY-MM-DD/log.md` (gitignored; also see `scratch/mabna-onsite-run.md`): date, who attended, checks run, pass/fail per check, drift found, reconciliation period and filter, totals difference (only if allowed), owner decisions made, follow-ups.
 - [ ] **Owner** What may leave the site: schema metadata (approved), the log with pass/fail, and aggregates only if the owner allowed them. Nothing else.
 - [ ] **Dev** After the visit: update the spec Clarifications with decisions and results, and the simulator script if drift was found.
+
+## 7. Purchasing slice
+
+Release 1 Phase 1 (spec 003, `specs/003-real-purchase-data/`). Run after sections 1–3 pass on the same visit. Only catalog metadata (names, types, keys, nullability) and owner-approved aggregate probes are used; no business rows. **Who** = Dev for every step; the Owner approves any aggregate probe before it runs. Record each item's status in the on-site source map (gitignored, `MabnaSync__SourceMapFile`) and the logical status only in `specs/003-real-purchase-data/source-verification.md`.
+
+Status vocabulary: `unknown` (not checked) | `candidate` (off-site candidate, unusable in production) | `confirmed` | `corrected`. Only `confirmed`/`corrected` count in production and only those objects join the live allowlist.
+
+### 7.1 Master data
+
+- [ ] **Dev** Vendor master: key column, name column, and whether an active marker exists (or none). Pass: each identified by catalog metadata; the key is unique (a duplicate-count aggregate, owner-approved).
+- [ ] **Dev** Product master: key column and name column. Pass: identified by catalog metadata; the key is unique (same rule as the vendor key).
+
+### 7.2 Invoice and return headers
+
+- [ ] **Dev** Header key, document number, vendor key and document date. Pass: each identified by catalog metadata. Confirm the date format (Jalali text, Jalali integer, or Gregorian) with one owner-approved aggregate (min and max per format, not rows).
+- [ ] **Dev** Operation code that selects purchase invoices, and the one that selects purchase returns. Pass: each code confirmed with an owner-approved count per code for one period; no other code is used.
+- [ ] **Dev** Cancelled rule: a flag column with its cancelled value, or a zero-header rule. Pass: rule identified; the owner-approved count of cancelled documents per rule matches the owner's expectation.
+- [ ] **Dev** Document-level discount column on invoice and return headers. Pass: mapped, or recorded as absent (`unknown`). This decides whether the `lineAndDocument` basis below is possible.
+
+### 7.3 Lines
+
+- [ ] **Dev** Line key, document key (link to the header), product key and quantity. Pass: identified by catalog metadata; the document key joins each line to exactly one header type (owner-approved aggregate: count of unlinked lines is zero).
+- [ ] **Dev** Gross line amount column and its sign convention (as stored, negated, or absolute). Pass: the sign is confirmed against the owner's report total for one period (aggregate only).
+- [ ] **Dev** Line discount column and VAT column. Pass: each mapped, or recorded as absent (`unknown`).
+
+### 7.4 Change markers, units and discount basis
+
+- [ ] **Dev** Change marker per table (row version, modified time, increasing key, or `full`). Header tables with an increasing key are read in full on every run; row-version and modified-time header tables also need a key-only read to find deletions (spec 003 Phase 13). Pass: each table has a recorded strategy; no table is left without one.
+- [ ] **Owner** Amount unit: confirm the stored amounts are Rial. Pass: the owner confirms against a report figure (aggregate only).
+- [ ] **Dev** Discount basis of Mabna's own purchase report total: `line` only, or `line` plus document discount. Pass: the basis that reproduces the owner's report total for one period. Set the map's `discountBasis` and `Purchasing__DiscountBasis` to the same value.
+
+### 7.5 Allowlist and recording rules
+
+- [ ] **Dev** Every purchasing item in the on-site source map is `confirmed` or `corrected` before any sync is run against live. Pass: no item left as `candidate` or `unknown` on the items a figure needs.
+- [ ] **Dev** The live allowlist holds only the objects whose items are `confirmed` or `corrected`. Pass: no `candidate` or `unknown` object on the live allowlist.
+- [ ] **Dev** Mabna's report views that filter on `HOST_ID()` are never read: every entity in the map sets `hostFiltered: false` and none of those views is on the allowlist. Pass: grep of the map and allowlist finds none.
+- [ ] **Dev** Copy the logical statuses and the verification date into `specs/003-real-purchase-data/source-verification.md`, and the on-site reconciliation pass or fail (no amounts). Pass: the file holds logical item names only; no real names and no rows.
+- [ ] **Dev** Nothing from this section is committed. Pass: `git status` clean (section 6).

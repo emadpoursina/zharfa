@@ -1,7 +1,10 @@
 # .ainative/project.yaml — Zharfa (live project manifest; source: AiNative methodology)
 #
 # `validation_commands` are run by the tester state for managed work. The
-# worker never runs them. Commands below prove the Demo 1 scaffold builds.
+# worker never runs them. Commands below prove the frontend builds, the API and
+# desktop shell compile, and the backend unit suites (specs 002 and 003) pass.
+# The Docker stack and the Mabna simulator are exercised by the tester's
+# quickstart flows (specs/003-real-purchase-data/quickstart.md), not here.
 
 validation_commands:
   # Frontend (React + TypeScript + Vite): install deps, then a production build.
@@ -15,5 +18,5 @@ validation_commands:
   # Desktop shell (WPF + WebView2, net10.0-windows): compiles on any OS via
   # EnableWindowsTargeting; running requires Windows + WebView2 Runtime.
   - PATH="$HOME/.dotnet:$PATH" DOTNET_SYSTEM_GLOBALIZATION_INVARIANT=1 dotnet build desktop/Zharfa.Desktop/Zharfa.Desktop.csproj
-  # Backend unit tests (xunit, spec 002): pure logic only, no database or network.
+  # Backend unit tests (xunit, specs 002 and 003): pure logic only, no database or network.
   - PATH="$HOME/.dotnet:$PATH" DOTNET_SYSTEM_GLOBALIZATION_INVARIANT=1 dotnet test backend/Zharfa.Api.Tests/Zharfa.Api.Tests.csproj
