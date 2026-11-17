@@ -40,11 +40,11 @@ DEFAULT_MAP = {
     "customer": {"table": "dbo.SimCustomer", "id": "CustId", "name": "CustName", "phone": "Phone"},
     "invoice": {"table": "dbo.SimInvoice", "id": "InvId", "customer": "CustId",
                 "date_text": "InvDateText", "date_num": "InvDateNum",
-                "status": "InvStatus", "amount": "Amount", "note": "Note",
+                "status": "InvStatus", "amount": "SimAmount", "note": "Note",
                 "status_codes": {"normal": 0, "cancelled": 1, "returned": 2}},
     "cheque": {"table": "dbo.SimCheque", "id": "ChqId", "customer": "CustId",
                "date_text": "DueDateText", "date_num": "DueDateNum",
-               "status": "ChqState", "amount": "Amount", "note": "Note",
+               "status": "ChqState", "amount": "SimAmount", "note": "Note",
                "status_codes": {"uncleared": 0, "cleared": 1, "bounced": 2}},
 }
 
