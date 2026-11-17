@@ -112,7 +112,15 @@ public static class MigrationRunner
                 }
             }
 
-            // Seed step: only run when app_user exists and has 0 rows
+            // Seed step: only in demo mode (production never applies db/seed/*, FR-021),
+            // and only when app_user exists and has 0 rows.
+            var rawMode = Zharfa.Api.Platform.DataModeOptions.ReadConfiguredMode(configuration);
+            var demoSeedsAllowed = string.Equals(rawMode?.Trim(), "demo", StringComparison.OrdinalIgnoreCase);
+            if (!demoSeedsAllowed)
+            {
+                logger.LogInformation("Seed skipped: data mode is '{DataMode}' (seeds apply in demo mode only).", rawMode ?? "unset");
+            }
+
             bool appUserExists = false;
             await using (var regCmd = new NpgsqlCommand("SELECT to_regclass('app_user') IS NOT NULL;", conn))
             {
@@ -138,7 +146,7 @@ public static class MigrationRunner
                     else if (countResult != null) userCount = Convert.ToInt64(countResult);
                 }
 
-                if (userCount == 0)
+                if (userCount == 0 && demoSeedsAllowed)
                 {
                     var seedDir = Path.Combine(dbRoot, "seed");
                     if (Directory.Exists(seedDir))
@@ -194,7 +202,7 @@ public static class MigrationRunner
                         }
                     }
                 }
-                else
+                else if (userCount > 0)
                 {
                     logger.LogInformation("Seed skipped: app_user table already contains records.");
                 }
@@ -209,7 +217,7 @@ public static class MigrationRunner
         }
     }
 
-    private static string ResolveDbRoot(ILogger logger)
+    public static string ResolveDbRoot(ILogger logger)
     {
         var explicitRoot = Environment.GetEnvironmentVariable("Migration__Root");
         if (!string.IsNullOrWhiteSpace(explicitRoot))

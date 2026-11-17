@@ -13,6 +13,19 @@ using Microsoft.Extensions.Logging;
 using Zharfa.Api.Ai;
 using Zharfa.Api.Analytics;
 using Zharfa.Api.Data;
+using Zharfa.Api.Platform;
+
+/// <summary>
+/// Labels every AI answer payload carries (FR-022, contracts/api.md §5). The AI agent is demo-only
+/// (<see cref="DemoOnlyAttribute"/>) until Phase 4, so these values are always the demo ones.
+/// </summary>
+public static class AiDataLabel
+{
+    public const string DataLabel = "demo";
+
+    public const string Notice =
+        "این پاسخ فقط بر اساس داده‌های نمایشی (دمو) تولید شده و هیچ داده واقعی شرکت در آن استفاده نشده است.";
+}
 
 public record AiChatRequest(
     string? Question,
@@ -28,7 +41,9 @@ public record AiChatResponse(
     string? View,
     IReadOnlyList<string> Facts,
     string Interpretation,
-    bool Unavailable);
+    bool Unavailable,
+    string DataLabel = AiDataLabel.DataLabel,
+    string DemoNotice = AiDataLabel.Notice);
 
 public record AiChatUnavailableResponse(
     bool DemoData,
@@ -39,11 +54,14 @@ public record AiChatUnavailableResponse(
     FiltersDto Filters,
     IReadOnlyList<string> Facts,
     string Interpretation,
-    string? View);
+    string? View,
+    string DataLabel = AiDataLabel.DataLabel,
+    string DemoNotice = AiDataLabel.Notice);
 
 [ApiController]
 [Route("api/ai")]
 [Authorize(Roles = "manager,admin")]
+[DemoOnly]
 public class AiController : ControllerBase
 {
     private const string SystemPrompt =

@@ -7,6 +7,7 @@ using Microsoft.AspNetCore.Mvc;
 using Zharfa.Api.Ai;
 using Zharfa.Api.Analytics;
 using Zharfa.Api.Data;
+using Zharfa.Api.Platform;
 
 /*
  * Verification matrix for direct-API negative authorization (T025 / check 4):
@@ -55,6 +56,7 @@ public class AdminController : ControllerBase
     /// Never returns credentials or secret parameters (FR-011).
     /// </summary>
     [HttpGet("provider")]
+    [DemoOnly]
     public async Task<IActionResult> GetProviderStatus(CancellationToken cancellationToken)
     {
         var status = _aiProvider.GetStatus();
@@ -79,6 +81,7 @@ public class AdminController : ControllerBase
     /// If there is any discrepancy, signOffBlocked is set to true and an audit mismatch is logged (FR-017).
     /// </summary>
     [HttpGet("reconciliation")]
+    [DemoOnly]
     public async Task<IActionResult> GetReconciliation(
         [FromQuery] string? from,
         [FromQuery] string? to,

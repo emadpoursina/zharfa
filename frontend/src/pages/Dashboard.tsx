@@ -27,7 +27,12 @@ interface CategoriesResponse {
   view: string;
 }
 
-export function Dashboard() {
+interface DashboardProps {
+  /** `modules.ai` from GET /api/system/status: false in production until Phase 4. */
+  aiEnabled: boolean;
+}
+
+export function Dashboard({ aiEnabled }: DashboardProps) {
   const [activePreset, setActivePreset] = useState<PeriodPreset>('current');
   const [range, setRange] = useState<{ from: string; to: string }>(() =>
     currentJalaliMonthToDate()
@@ -379,14 +384,16 @@ export function Dashboard() {
           prevJalaliLabel={overview?.period.prev.jalaliLabel}
         />
 
-        {/* AI Business Analyst (T023 / US4) */}
-        <AiChat
-          from={range.from}
-          to={range.to}
-          jalaliLabel={overview?.period.jalaliLabel ?? formatJalaliRange(range.from, range.to)}
-          categoryId={selectedCategoryId}
-          categories={categories}
-        />
+        {/* AI Business Analyst (T023 / US4): hidden unless the server enables the AI module (T072) */}
+        {aiEnabled && (
+          <AiChat
+            from={range.from}
+            to={range.to}
+            jalaliLabel={overview?.period.jalaliLabel ?? formatJalaliRange(range.from, range.to)}
+            categoryId={selectedCategoryId}
+            categories={categories}
+          />
+        )}
       </div>
     </div>
   );

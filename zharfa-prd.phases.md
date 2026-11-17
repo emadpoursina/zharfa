@@ -22,7 +22,7 @@
 - [ ] A production-mode install shows no synthetic data or Demo 1 pages; a demo-mode install labels everything as demonstration data
 - [ ] An attempted non-SELECT statement or a non-allowlisted table is refused by the connector before reaching the server
 **Out of scope:** Vendor and purchasing report pages (Phase 2), new roles (Phase 3; Demo 1's Manager/Admin apply until then), AI over real data (Phase 4), vendor financials (Phase 6).
-**Spec:** none
+**Spec:** specs/003-real-purchase-data
 
 ## Phase 2: Vendor and purchasing reports
 

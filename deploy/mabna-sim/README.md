@@ -206,3 +206,82 @@ database (`yyyymmdd`, `yymmdd`, `yy/mm/dd`, `//` for "no date", `Date_Calc`
 invoices as zeroed headers without items; cheque states R P Q X B H N D T V with
 valid transitions, incoming and outgoing (`Input = 0`) instruments; payment
 types 1/17/3 (cash-like), 16 and 33 (not cash), 101/102/14/15 and 13.
+
+## Purchasing scenario (spec 003, Release 1)
+
+Synthetic purchasing data for the purchasing feature (quickstart Flows 2, 6 and 7).
+Every name the scenario uses is made up or taken from the gitignored candidate map; nothing
+here is real. The committed example uses made-up object names (`dbo.Sim*`) and made-up column names
+(`example/purchase-source-map.example.json`, `example/purchase-allowlist.example.txt`).
+
+### 1. Regenerate with the candidate purchasing tables as roots
+
+`--roots` replaces the default root list (the views of `--base-capture`), so list the
+existing base views **and** the candidate purchasing objects. The foreign-key parents of
+each root are pulled in by the closure.
+
+```bash
+D=scratch/mabna-capture-output
+python3 deploy/mabna-sim/gen_schema.py $D/schema-capture-full.txt \
+  --definitions $D/definitions-full.sql --base-capture $D/schema-capture.txt \
+  --lookups $D/lookups.txt --row-counts $D/row-counts-full.txt \
+  --roots <base views,candidate purchasing objects (comma-separated)>
+python3 deploy/mabna-sim/check_order.py
+```
+
+### 2. Scenario: purchasing data in `generated/scenario.py` (gitignored)
+
+Add the vendor, product, purchase invoice header, purchase return header and purchase line
+tables to `TABLES` in `generated/scenario.py` and write their rows in `build_all(ctx)`
+(see "Full capture" above for the `ctx` helpers). Cover these edge cases:
+
+- vendor names with Arabic ي (U+064A) and ك (U+0643) next to Persian ی and ک;
+- documents dated `1403/12/30` and `1404/01/01` (Jalali text, and numeric where the captured
+  format has it; use `ctx.j2g` for any Gregorian column);
+- a return dated in a later month than the invoice it returns;
+- a cancelled document (set the cancelled column to its cancelled value);
+- a line with no vendor and no product: set each nullable foreign-key column to an explicit
+  `None`, so the row has no parent (a missing non-nullable key would be given a parent row);
+- an empty month: no documents at all in one Jalali month.
+
+Seedgen fills every other column. The scenario is the only place real column names appear,
+which is why the file stays under `generated/`.
+
+Then regenerate the seed:
+
+```bash
+python3 deploy/mabna-sim/gen_seed.py --capture $D/schema-capture-full.txt \
+  --selection deploy/mabna-sim/generated/selection.json --row-counts $D/row-counts-full.txt \
+  --lookups $D/lookups.txt --scenario deploy/mabna-sim/generated/scenario.py
+```
+
+### 3. Gitignored outputs for the sync and the flows
+
+- `generated/purchase-source-map.json`: copy `example/purchase-source-map.example.json` and
+  replace each made-up object and column name in the example with the captured candidate name.
+  Keep every status `candidate`, `hostFiltered: false`, and the `discountBasis` the candidate
+  map uses (contracts/source-map.md).
+- `generated/allowlist.txt`: one `schema.object` per line for every object in that map. The
+  sync refuses a map whose object is not on the allowlist (contracts/source-map.md, rule 2).
+- `generated/src/purchasing-changes.sql`: hand-written simulator-only changes for Flow 6, run
+  as `sa` in the simulator: add an invoice with lines, edit the line amount of one recent
+  invoice, delete one recent return, and the old-document changes (spec 003 Phase 13, US2 AC5):
+  set `IsCanceled = 1` on one invoice dated more than 60 days before the run, and delete one
+  return dated more than 60 days before the run. The incremental sync must pick both up
+  (quickstart Flow 6). The sync reads every header on each run, so a row's age does not matter.
+  The generator does not write this file. It must never
+  run against live Mabna.
+
+Start the simulator with `docker compose -f deploy/docker-compose.mabna-sim.yml down -v && ... up -d`
+after a regeneration, because `TotalSystem` is built only once.
+
+### 4. Copy `generated/` into a worktree
+
+Gitignored output is not in a fresh worktree. From the worktree root, copy the main checkout's
+output (adjust the relative path to your layout; quickstart Flow 6 uses the same path):
+
+```bash
+cp -R ../../../zharfa/deploy/mabna-sim/generated/. deploy/mabna-sim/generated/
+```
+
+Only `generated/.gitkeep` is tracked; never `git add` anything else under `generated/`.

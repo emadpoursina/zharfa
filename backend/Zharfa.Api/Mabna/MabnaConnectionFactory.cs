@@ -7,14 +7,15 @@ using Microsoft.Extensions.Options;
 /// Builds SQL Server connections for the Mabna source from configuration.
 /// The connection string is read here and nowhere else; it is never logged
 /// and never echoed in exception messages produced by this code.
+/// <c>Create</c> is virtual only so that unit tests can count connection attempts without a server.
 /// </summary>
-public sealed class MabnaConnectionFactory(IOptions<MabnaSourceOptions> options)
+public class MabnaConnectionFactory(IOptions<MabnaSourceOptions> options)
 {
     private readonly MabnaSourceOptions _options = options.Value;
 
     public bool IsEnabled => _options.IsEnabled;
 
-    public SqlConnection Create()
+    public virtual SqlConnection Create()
     {
         if (!_options.IsEnabled)
         {

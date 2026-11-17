@@ -1,11 +1,11 @@
-# Deploy — Docker Compose (Demo 1)
+# Deploy — Docker Compose (Demo 1 and Release 1, Phase 1)
 
 Services: `db` (PostgreSQL 18), `api` (ASP.NET Core), `web` (static frontend +
 nginx reverse proxy for `/api`).
 
 ## Quick start (helper scripts)
 
-Copy the env file once and set `POSTGRES_PASSWORD`, then use the helper for your OS:
+Copy the env file once and set `POSTGRES_PASSWORD` and `ZHARFA_DATA_MODE`, then use the helper for your OS:
 
 ```bash
 cp deploy/.env.example deploy/.env       # Windows: copy deploy\.env.example deploy\.env
@@ -29,27 +29,109 @@ file exists (the local 9router network override).
 ## Install (manual)
 
 ```bash
-cp deploy/.env.example deploy/.env   # then set POSTGRES_PASSWORD + AI provider values
+cp deploy/.env.example deploy/.env   # then set POSTGRES_PASSWORD, ZHARFA_DATA_MODE, and the AI provider values
 docker compose -f deploy/docker-compose.yml up --build -d
 curl -s http://localhost:8080/api/health   # proxied to the API health endpoint
 ```
 
-Open http://localhost:8080 — Persian RTL frontend (demonstration data).
+Open http://localhost:8080. What you see depends on the data mode (below): the
+demonstration data in `demo`, the real purchasing data in `production`.
 
-### Demo accounts
+## Data mode (FR-020, FR-021, FR-022)
+
+`ZHARFA_DATA_MODE` is **required** in `deploy/.env` and must be `production` or `demo`.
+Compose refuses to start the stack without it, and the API refuses to start when it is missing or invalid.
+
+- `production`: the company install. It shows real Mabna purchasing data only. Demo pages,
+  the synthetic seed and the AI chat are hidden in the UI and refused by the API (404). Startup
+  is refused if the synthetic seed was ever loaded into this database.
+- `demo`: the synthetic demonstration install. Every page, report and AI answer is labeled as demonstration data.
+  Seeds (demo accounts, synthetic data) apply here only.
+
+The mode is stored in the database on first start. A later start with a different
+`ZHARFA_DATA_MODE` is refused: an existing install cannot be flipped from the outside.
+Use a fresh database (`./deploy/zharfa.sh reset`, which deletes data) to change it.
+
+### Demo accounts (demo mode only)
 
 Seed demonstration accounts (documented demonstration credentials, change before any real use):
 - Manager: `manager` / `manager123` (view dashboard, inventory alerts, receivables, AI chat)
 - Administrator: `admin` / `admin123` (view dashboard, admin provider status, reconciliation)
 
+### Production bootstrap accounts
+
+In `production`, the first two accounts come from the environment and are created once, when `app_user` is empty:
+`Bootstrap__AdminUsername` / `Bootstrap__AdminPassword` and `Bootstrap__ManagerUsername` / `Bootstrap__ManagerPassword`.
+Each password must be at least 12 characters. Missing or short values refuse startup. The passwords are never logged.
+Leave them blank in demo installs.
+
+## Purchasing sync (Mabna, read-only)
+
+Real purchasing data reaches the install through a read-only sync. The API reads Mabna
+through the read-only login only, writes its copy to PostgreSQL (`mabna` schema), and never writes to Mabna.
+Reports read the synced copy, never Mabna per request.
+
+- **Nightly run**: an incremental sync at `Sync__NightlyTime` (default `02:00`, `Sync__TimeZone` default `Asia/Tehran`).
+  The weekly full load runs on `Sync__WeeklyFullLoadDay` (default `Friday`; `None` disables it).
+- **Sync now**: an Admin starts a run from the **تنظیمات ← همگام‌سازی داده** page (`POST /api/admin/sync/run`).
+  Only one run can be active; a second request is answered 409.
+- **Status**: the Data sync page lists the runs, their row counts per table and the last successful sync.
+  Error text is scrubbed of connection strings, hosts and database names.
+- **Source map and allowlist**: the real purchasing source map and the table allowlist are never committed.
+  Put them in `deploy/mabna-config/` (gitignored except `.gitkeep`). Compose mounts that folder read-only at
+  `/etc/zharfa/mabna`, and `MabnaSync__SourceMapFile` and `MabnaSource__AllowlistFile` point at the container paths.
+  Unset `MabnaSync__SourceMapFile` keeps sync disabled (`source-not-configured`).
+- **Discount basis**: `Purchasing__DiscountBasis` (`line` or `lineAndDocument`) must equal the basis verified in the
+  source map. In `production` a mismatch refuses startup. See `docs/metrics/purchasing.md`.
+- **Time zone**: the container runs in `TZ=Asia/Tehran`, matching the default `Sync__TimeZone`.
+
+## Reconciliation CLI (FR-017, FR-018)
+
+The reconciliation compares each purchasing total (net, gross, returns, VAT) with the same query run on the
+source data. A mismatch blocks sign-off. It runs in the API image and does not start the web host:
+
+```bash
+docker compose -f deploy/docker-compose.yml run --rm api reconcile purchasing --month 1405-08
+docker compose -f deploy/docker-compose.yml run --rm api reconcile purchasing --month 1405-08 --vendor <sourceKey>
+docker compose -f deploy/docker-compose.yml run --rm api reconcile purchasing --month 1405-08 --basis lineAndDocument
+```
+
+- It needs at least one succeeded sync, `ConnectionStrings__Mabna`, the allowlist, the source map and `ZHARFA_DATA_MODE`.
+- It prints one JSON line on stdout. In `production` the amounts are left out unless `--show-amounts` is given, so real
+  totals stay on the screen and in the database.
+- Exit codes: `0` all metrics pass (unavailable metrics are listed but do not fail), `1` a mismatch (sign-off blocked),
+  `2` an error (source unreachable, invalid map, no successful sync).
+
+## Development override (simulator data only)
+
+`deploy/docker-compose.purchasing-dev.yml` runs the API in `Development` with `demo` data against the offline Mabna
+simulator (`deploy/mabna-sim/`, synthetic data). It mounts the simulator's map and allowlist under
+`/etc/zharfa/mabna-sim`, a folder separate from the production `/etc/zharfa/mabna` mount:
+
+```bash
+docker compose -f deploy/docker-compose.mabna-sim.yml up -d
+docker compose -f deploy/docker-compose.yml -f deploy/docker-compose.purchasing-dev.yml up --build -d
+```
+
+Never use this override against real Mabna or a production install.
+
 ### Configuration & environment variables
 
-All configuration is supplied via environment variables (`deploy/.env` or server env):
+All configuration is supplied via environment variables (`deploy/.env` or server env). `deploy/.env.example`
+documents every key with an empty value:
+- `ZHARFA_DATA_MODE`: required, `production` or `demo` (see Data mode above).
+- `Bootstrap__AdminUsername`, `Bootstrap__AdminPassword`, `Bootstrap__ManagerUsername`, `Bootstrap__ManagerPassword`: production bootstrap accounts (see above).
+- `ZHARFA_MABNA_CONFIG_DIR`: host folder with the source map and allowlist (default `./mabna-config`, i.e. `deploy/mabna-config/`).
+- `ConnectionStrings__Mabna`: read-only Mabna login. Blank keeps the connector disabled. Never commit it.
+- `MabnaSource__AllowlistFile`, `MabnaSource__CommandTimeoutSeconds` (default `60`): the read allowlist and per-query timeout.
+- `MabnaSync__SourceMapFile`: container path of the purchasing source map.
+- `Sync__NightlyTime` (`02:00`), `Sync__TimeZone` (`Asia/Tehran`), `Sync__WeeklyFullLoadDay` (`Friday`), `Sync__PageSize` (`5000`, at most `MabnaSource__MaxRows`), `Sync__MaxRejectedRows` (`0`). Blank means the default.
+- `Purchasing__DiscountBasis`: `line` (default) or `lineAndDocument`.
 - `AI_PROVIDER_NAME`: Display name of the cloud AI provider (e.g. OpenAI).
 - `AI_PROVIDER_ENDPOINT`: API base URL including any `/v1` path (e.g. `https://api.openai.com/v1`).
 - `AI_PROVIDER_MODEL`: Model identifier (e.g. `gpt-4o-mini`).
 - `AI_PROVIDER_API_KEY`: API secret key.
-  * Note: Provider configuration is env-only; an admin-only redacted status endpoint (`GET /api/admin/provider`) returns `name`, `endpoint`, `model`, and `configured` status, and NEVER the secret key.
+  * Note: Provider configuration is env-only; an admin-only redacted status endpoint (`GET /api/admin/provider`, demo mode only in this phase) returns `name`, `endpoint`, `model`, and `configured` status, and NEVER the secret key.
   * The local Ollama seam is an interface only (never implemented in Demo 1).
 - `INVENTORY_LOW_STOCK_THRESHOLD`: Optional threshold for low-stock inventory alerts (default `10`, one server-side threshold for all products).
 - `POSTGRES_DB`, `POSTGRES_USER`, `POSTGRES_PASSWORD`: PostgreSQL connection credentials.
@@ -62,8 +144,8 @@ All configuration is supplied via environment variables (`deploy/.env` or server
   * Tracked in the `schema_migrations` table.
   * Each migration file runs inside its own database transaction.
   * The API fails fast on any migration error and halts startup.
-- Seeds apply exactly once when the `app_user` table is empty (from `db/seed`).
-- NO manual DB edits and NO Mabna access at any point (FR-014).
+- Seeds (`db/seed`) apply only in `demo` mode, and only when the `app_user` table is empty. `production` never applies them.
+- NO manual DB edits and NO Mabna access at any point outside the read-only sync and the reconciliation (FR-014).
 
 ## Restore / backup
 
@@ -83,7 +165,7 @@ The desktop shell connects to this deployment by setting:
 
 ## Notes
 
-- Nothing here connects to any legacy system; Demo 1 has no Mabna access.
+- Nothing here connects to any legacy system unless `ConnectionStrings__Mabna` is set in `deploy/.env`; left blank, the Mabna connector and the purchasing sync stay disabled.
+- The API container mounts `deploy/mabna-config/` (gitignored except `.gitkeep`) read-only at `/etc/zharfa/mabna`. It holds the purchasing source map and the allowlist; their contents never enter git.
 - AI keys and DB credentials live in `deploy/.env` / Docker secrets only.
-- The desktop shell connects to this deployment by setting
-  `ZHARFA_FRONTEND_URL=http://localhost:8080`.
+- Release 1 deploys to the company LAN server only (HTTPS, no remote access).

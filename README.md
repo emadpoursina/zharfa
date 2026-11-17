@@ -22,6 +22,25 @@ Demo installs run on synthetic demonstration data, labeled as such.
 Production installs read real Mabna data through a read-only sync and never
 write to Mabna; development uses the offline simulator in `deploy/mabna-sim/`.
 
+## Release 1, Phase 1: Real Purchase Data
+
+- **Data mode:** every install runs in exactly one mode, set by `ZHARFA_DATA_MODE`
+  (`production` or `demo`). It is required; the API refuses to start without it.
+  `production` shows real purchasing data only and hides the demo pages and the AI chat.
+  `demo` shows the synthetic data, labeled as demonstration data.
+- **Overview (Manager and Admin):** the purchasing Overview for a Jalali month: net, gross,
+  returns and VAT, comparison with the previous month, a 12-month trend, active vendors and the
+  top five vendors and products. Each figure carries its data label and last-sync time.
+- **Data sync (Admin):** a read-only nightly incremental sync from Mabna (default 02:00 Tehran
+  time, weekly full load) plus an Admin "sync now". Reports read the synced copy, never Mabna per request.
+- **Reconciliation:** `reconcile purchasing` compares each purchasing total with the same query on the
+  source data. A mismatch blocks sign-off.
+- **Metric definitions:** [`docs/metrics/purchasing.md`](docs/metrics/purchasing.md) (single source for every purchasing figure).
+- **Deployment and configuration:** [`deploy/README.md`](deploy/README.md) and
+  [`backend/Zharfa.Api/README.md`](backend/Zharfa.Api/README.md). The real source map and
+  allowlist are never committed.
+- **Spec:** [`specs/003-real-purchase-data/`](specs/003-real-purchase-data/).
+
 ## Repository layout
 
 ```
@@ -36,7 +55,7 @@ deploy/          docker-compose.yml, .env.example, nginx reverse proxy
 scratch/         throwaway notes (gitignored)
 ```
 
-Structure only so far — Demo 1 feature code lands on feature cards.
+The Demo 1 features and the Release 1 Phase 1 purchasing features are in place.
 
 ## Local commands
 
@@ -45,8 +64,11 @@ npm --prefix frontend install && npm --prefix frontend run build   # frontend bu
 dotnet run --project backend/Zharfa.Api                            # API on :5080
 dotnet build desktop/Zharfa.Desktop                                # desktop shell compile
 dotnet test backend/Zharfa.Api.Tests                               # backend unit tests (no DB or network)
-docker compose -f deploy/docker-compose.yml up --build -d          # full deployment
+docker compose -f deploy/docker-compose.yml up --build -d          # full deployment (deploy/.env must set ZHARFA_DATA_MODE)
 ```
+
+For a full deployment, copy `deploy/.env.example` to `deploy/.env` and set at least
+`POSTGRES_PASSWORD` and `ZHARFA_DATA_MODE` (`production` or `demo`). Compose refuses to start without them.
 
 `validation_commands` in [`.ainative/project.yaml`](.ainative/project.yaml)
 list exactly what the tester runs; the backend and desktop builds need the

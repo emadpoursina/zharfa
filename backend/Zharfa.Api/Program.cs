@@ -17,8 +17,50 @@ using Zharfa.Api.Ai;
 using Zharfa.Api.Analytics;
 using Zharfa.Api.Data;
 using Zharfa.Api.Mabna;
+using Zharfa.Api.Mabna.Sync;
+using Zharfa.Api.Platform;
+using Zharfa.Api.Purchasing;
+
+// `reconcile purchasing …` runs the developer CLI instead of the web host (spec 003 FR-017, T055).
+var isReconcileCommand = Zharfa.Api.Purchasing.ReconcileCommandLine.IsReconcile(args);
 
 var builder = WebApplication.CreateBuilder(args);
+if (isReconcileCommand)
+{
+    // The CLI prints one JSON line on stdout: every log line goes to stderr instead.
+    builder.Logging.ClearProviders();
+    builder.Logging.AddConsole(options => options.LogToStandardErrorThreshold = LogLevel.Trace);
+}
+
+// Data mode (FR-020): required, server-only; refuse to start when missing/invalid
+// before anything else touches configuration or the database.
+var dataMode = DataModeOptions.FromConfiguration(DataModeOptions.ReadConfiguredMode(builder.Configuration));
+builder.Services.AddSingleton(dataMode);
+
+// Sync, source-map and purchasing settings (contracts/cli-and-config.md §2).
+// Built once, through the blank-tolerant reader (an empty Sync__PageSize falls back to 5000).
+var syncSettings = SyncOptions.FromConfiguration(builder.Configuration);
+builder.Services.AddSingleton(Microsoft.Extensions.Options.Options.Create(syncSettings));
+builder.Services.Configure<MabnaSyncOptions>(builder.Configuration.GetSection(MabnaSyncOptions.SectionName));
+builder.Services.Configure<PurchasingOptions>(builder.Configuration.GetSection(PurchasingOptions.SectionName));
+
+// Fail fast, before any database work, on settings that cannot be honoured: an unknown
+// Sync__TimeZone, a Sync__PageSize above the effective MabnaSource__MaxRows, or a
+// Purchasing__DiscountBasis that is invalid or, in production, differs from the verified
+// basis in the source map (FR-014: hard refusal, never silent).
+SyncOptions.ResolveTimeZone(syncSettings.TimeZone);
+var startupMabnaSourceSettings = builder.Configuration.GetSection(MabnaSourceOptions.SectionName).Get<MabnaSourceOptions>() ?? new MabnaSourceOptions();
+SyncOptions.ValidatePageSize(syncSettings.PageSize, startupMabnaSourceSettings.EffectiveMaxRows);
+
+var startupPurchasingSettings = builder.Configuration.GetSection(PurchasingOptions.SectionName).Get<PurchasingOptions>() ?? new PurchasingOptions();
+var startupSourceMapFile = builder.Configuration.GetSection(MabnaSyncOptions.SectionName).Get<MabnaSyncOptions>()?.SourceMapFile;
+var verifiedDiscountBasis = SourceMap.LoadFromFile(startupSourceMapFile).Map?.DiscountBasisValue;
+var discountBasisError = PurchasingDiscountBasis.Validate(
+    startupPurchasingSettings.DiscountBasis, dataMode.IsProduction, verifiedDiscountBasis);
+if (discountBasisError is not null)
+{
+    throw new InvalidOperationException(discountBasisError);
+}
 
 builder.Services.AddControllers()
     .ConfigureApiBehaviorOptions(options =>
@@ -78,6 +120,12 @@ builder.Services.AddScoped<AuditLogger>();
 
 builder.Services.AddMabnaSource(builder.Configuration);
 
+// Purchasing sync (spec 003, US2): store, runner, coordinator and the nightly scheduler.
+builder.Services.AddPurchasingSync(builder.Configuration, builder.Environment, dataMode);
+builder.Services.AddSingleton<PurchasingReconciliation>();
+// Overview (spec 003, US5): server-side purchasing figures for Manager and Admin (contracts/api.md §3).
+builder.Services.AddScoped<PurchasingOverviewService>();
+
 builder.Services.AddHttpClient("ai", client =>
 {
     client.Timeout = TimeSpan.FromSeconds(30);
@@ -128,6 +176,32 @@ var app = builder.Build();
 
 // Run forward-only SQL migrations at startup
 await Zharfa.Api.Data.MigrationRunner.RunAsync(app.Configuration, app.Logger);
+
+// Data-mode gate: record the mode on first start; refuse a mode flip or a
+// production install that still carries demo seed files (FR-020/FR-021).
+await DataModeGate.RunAsync(app.Configuration, dataMode, app.Logger);
+
+// Developer CLI: reconcile purchasing (FR-017). It returns its exit code (0 pass, 1 mismatch, 2 error)
+// before the first-run accounts, startup recovery and the web pipeline run, so the CLI never marks a
+// sync job of a running API as interrupted.
+if (isReconcileCommand)
+{
+    return await Zharfa.Api.Purchasing.ReconcileCli.RunAsync(app.Services, args, CancellationToken.None);
+}
+
+// Production first-run accounts from Bootstrap__* (never logged).
+using (var bootstrapScope = app.Services.CreateScope())
+{
+    var bootstrapDb = bootstrapScope.ServiceProvider.GetRequiredService<ZharfaDbContext>();
+    await BootstrapAccounts.EnsureAsync(dataMode, app.Configuration, bootstrapDb, app.Logger);
+}
+
+// Sync startup recovery: a run interrupted by a restart is recorded as failed before the
+// scheduler can start a new one (it only acts when no other process holds the sync lock).
+await app.Services.RecoverInterruptedSyncRunsAsync(app.Logger);
+
+// Source map check at startup: a warning (no secrets) when the map is invalid; the Data sync page shows why.
+await app.Services.WarnIfSourceMapInvalidAsync(app.Logger);
 
 // Global exception handling middleware guaranteeing Persian error envelope and no sensitive leaks
 app.Use(async (context, next) =>
@@ -196,7 +270,7 @@ app.MapGet("/api/health", () => Results.Ok(new
 {
     status = "ok",
     component = "zharfa-api",
-    demoData = true,
+    demoData = dataMode.IsDemo,
 }));
 
 app.UseAuthentication();
@@ -205,3 +279,5 @@ app.UseAuthorization();
 app.MapControllers();
 
 app.Run();
+
+return 0;

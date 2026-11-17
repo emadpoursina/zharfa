@@ -1,8 +1,11 @@
-# Zharfa Demo 1 — self-hosted deployment: PostgreSQL, backend API, and the
+# Zharfa — self-hosted deployment: PostgreSQL, backend API, and the
 # web/reverse-proxy service that serves the shared Persian RTL frontend.
 #
-# Demo 1 runs on synthetic demonstration data only and never connects to any
-# legacy system. Secrets come from deploy/.env (gitignored) or Docker secrets —
+# ZHARFA_DATA_MODE (required, deploy/.env) sets the install's data mode once:
+# "production" shows real Mabna purchasing data only; "demo" shows the synthetic
+# demonstration data and labels everything as demonstration. The API refuses to
+# start without it. The Mabna connector is read-only and stays disabled until its
+# variables are set. Secrets come from deploy/.env (gitignored) or Docker secrets —
 # never from the frontend bundle or the repository.
 
 name: zharfa
@@ -30,6 +33,9 @@ services:
     environment:
       ASPNETCORE_ENVIRONMENT: Production
       ASPNETCORE_URLS: http://+:8080
+      # Install data mode (FR-020): required, "production" or "demo"; the API refuses to start without it.
+      # Also read by `docker compose run --rm api reconcile purchasing …` (spec 003, T056).
+      Zharfa__DataMode: ${ZHARFA_DATA_MODE:?set ZHARFA_DATA_MODE in deploy/.env (production or demo)}
       ConnectionStrings__Zharfa: "Host=db;Port=5432;Database=${POSTGRES_DB:-zharfa};Username=${POSTGRES_USER:-zharfa};Password=${POSTGRES_PASSWORD}"
       # Single AI provider for Demo 1; values come from deploy/.env only.
       AiProvider__Name: ${AI_PROVIDER_NAME:-}
@@ -37,6 +43,35 @@ services:
       AiProvider__Model: ${AI_PROVIDER_MODEL:-}
       AiProvider__ApiKey: ${AI_PROVIDER_API_KEY:-}
       Inventory__LowStockThreshold: ${INVENTORY_LOW_STOCK_THRESHOLD:-10}
+      # Mabna read-only source (spec 002/003). Unset = connector and sync stay disabled; the API still starts.
+      # Values come from deploy/.env only. The file paths are container paths under the read-only mount below.
+      ConnectionStrings__Mabna: ${ConnectionStrings__Mabna:-}
+      MabnaSource__AllowlistFile: ${MabnaSource__AllowlistFile:-}
+      MabnaSource__CommandTimeoutSeconds: ${MabnaSource__CommandTimeoutSeconds:-60}
+      MabnaSync__SourceMapFile: ${MabnaSync__SourceMapFile:-}
+      # Purchasing discount basis (line | lineAndDocument); production refuses to start unless it equals the verified map basis.
+      Purchasing__DiscountBasis: ${Purchasing__DiscountBasis:-}
+      # Nightly incremental sync and page size (contracts/cli-and-config.md §2). Blank = documented default.
+      # Sync__FaultInjection__* is not passed here: it is dev-only and lives in docker-compose.purchasing-dev.yml.
+      Sync__NightlyTime: ${Sync__NightlyTime:-}
+      Sync__TimeZone: ${Sync__TimeZone:-}
+      Sync__WeeklyFullLoadDay: ${Sync__WeeklyFullLoadDay:-}
+      Sync__PageSize: ${Sync__PageSize:-}
+      Sync__MaxRejectedRows: ${Sync__MaxRejectedRows:-}
+      # First-run production accounts (used once, when app_user is empty; never logged). Blank in demo installs.
+      Bootstrap__AdminUsername: ${Bootstrap__AdminUsername:-}
+      Bootstrap__AdminPassword: ${Bootstrap__AdminPassword:-}
+      Bootstrap__ManagerUsername: ${Bootstrap__ManagerUsername:-}
+      Bootstrap__ManagerPassword: ${Bootstrap__ManagerPassword:-}
+      # Container clock in Tehran time, matching the default Sync__TimeZone (Asia/Tehran).
+      TZ: Asia/Tehran
+    volumes:
+      # Gitignored host folder with the purchasing source map and the allowlist; read-only in the container.
+      # Its contents never enter git (deploy/mabna-config/* is ignored except .gitkeep).
+      - type: bind
+        source: ${ZHARFA_MABNA_CONFIG_DIR:-./mabna-config}
+        target: /etc/zharfa/mabna
+        read_only: true
     depends_on:
       db:
         condition: service_healthy

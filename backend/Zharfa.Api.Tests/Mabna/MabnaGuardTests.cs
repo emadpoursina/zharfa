@@ -1,5 +1,6 @@
 namespace Zharfa.Api.Tests.Mabna;
 
+using Microsoft.Extensions.Logging.Abstractions;
 using Zharfa.Api.Mabna;
 
 // Placeholder object names only: real Mabna table names are not committed (spec FR-02).
@@ -162,4 +163,132 @@ public class MabnaSqlGuardTests
     [InlineData("SELECT [Id] FROM [dbo].[T]] WAITFOR")]
     [InlineData("SELECT [Id] FROM \"dbo\".\"T\"")]
     public void Rejects_anything_else(string sql) => Assert.False(MabnaSqlGuard.IsSingleSelect(sql, out _));
+
+    // T044: MERGE and DDL, the statements the read-only login must never let through either.
+    [Theory]
+    [InlineData("MERGE INTO [dbo].[T] AS t USING (SELECT 1 AS [Id]) AS s ON t.[Id] = s.[Id] WHEN MATCHED THEN DELETE;")]
+    [InlineData("MERGE [dbo].[T] USING [dbo].[U] ON 1 = 1 WHEN MATCHED THEN UPDATE SET [A] = 1;")]
+    [InlineData("TRUNCATE TABLE [dbo].[T]")]
+    [InlineData("DROP TABLE [dbo].[T]")]
+    [InlineData("ALTER TABLE [dbo].[T] ADD [X] int")]
+    [InlineData("CREATE TABLE [dbo].[X] ([A] int)")]
+    [InlineData("GRANT SELECT ON [dbo].[T] TO [zharfa_ro]")]
+    [InlineData("EXECUTE [dbo].[SimWriter]")]
+    [InlineData("BULK INSERT [dbo].[T] FROM 'x'")]
+    public void Rejects_merge_truncate_and_ddl_statements(string sql) =>
+        Assert.False(MabnaSqlGuard.IsSingleSelect(sql, out _));
+}
+
+/// <summary>
+/// T044 (spec 003, US3): refusals happen in the connector before any connection is created. A
+/// counting connection factory (no server, no network) records every attempt. The example
+/// purchasing tables are read only when they are on the allowlist.
+/// </summary>
+public class MabnaConnectorRefusalTests
+{
+    private static readonly string ExampleAllowlistPath =
+        Path.Combine(AppContext.BaseDirectory, "example", "purchase-allowlist.example.txt");
+
+    private static MabnaSourceOptions SourceOptions(IEnumerable<string> allowed) => new()
+    {
+        ConnectionString = "Server=unused.invalid;Database=unused;Integrated Security=true",
+        VerifyReadOnlyLogin = false,
+        AllowedObjects = allowed.ToList(),
+    };
+
+    private static (MabnaReader Reader, CountingConnectionFactory Factory) ReaderWith(MabnaSourceOptions options)
+    {
+        var factory = new CountingConnectionFactory(options);
+        var policy = new MabnaObjectPolicy(MabnaObjectPolicy.LoadEntries(options));
+        var gate = new MabnaReadOnlyGate(
+            factory,
+            policy,
+            Microsoft.Extensions.Options.Options.Create(options),
+            NullLogger<MabnaReadOnlyGate>.Instance);
+        var reader = new MabnaReader(
+            factory,
+            policy,
+            gate,
+            Microsoft.Extensions.Options.Options.Create(options),
+            NullLogger<MabnaReader>.Instance);
+        return (reader, factory);
+    }
+
+    [Theory]
+    [InlineData("scuUser")]
+    [InlineData("UserRights")]
+    [InlineData("scuAccount")]
+    [InlineData("msgInbox")]
+    public async Task Excluded_object_is_refused_with_zero_connections_even_when_listed(string name)
+    {
+        var (reader, factory) = ReaderWith(SourceOptions(new[] { name }));
+
+        await Assert.ThrowsAsync<MabnaAccessDeniedException>(() => reader.ReadAsync(new MabnaQuery(name, new[] { "Id" })));
+        Assert.Equal(0, factory.Opens);
+    }
+
+    [Theory]
+    [InlineData("dbo.SimVendor")]
+    [InlineData("dbo.SimProduct")]
+    [InlineData("dbo.SimInvDoc")]
+    [InlineData("dbo.SimRetDoc")]
+    [InlineData("dbo.SimInvDocItem")]
+    public async Task Purchasing_table_not_on_the_allowlist_is_refused_with_zero_connections(string name)
+    {
+        var (reader, factory) = ReaderWith(SourceOptions(new[] { "dbo.SimSomethingElse" }));
+
+        await Assert.ThrowsAsync<MabnaAccessDeniedException>(() => reader.ReadAsync(new MabnaQuery(name, new[] { "Id" })));
+        Assert.Equal(0, factory.Opens);
+    }
+
+    [Theory]
+    [InlineData("dbo.SimVendor; DROP TABLE x")]
+    [InlineData("dbo.SimVendor]")]
+    [InlineData("srv.db.dbo.SimVendor")]
+    [InlineData("")]
+    public async Task Malformed_object_name_is_refused_with_zero_connections(string name)
+    {
+        var (reader, factory) = ReaderWith(SourceOptions(new[] { "dbo.SimVendor" }));
+
+        await Assert.ThrowsAsync<MabnaAccessDeniedException>(() => reader.ReadAsync(new MabnaQuery(name, new[] { "Id" })));
+        Assert.Equal(0, factory.Opens);
+    }
+
+    [Theory]
+    [InlineData("dbo.SimVendor")]
+    [InlineData("dbo.SimProduct")]
+    [InlineData("dbo.SimInvDoc")]
+    [InlineData("dbo.SimRetDoc")]
+    [InlineData("dbo.SimInvDocItem")]
+    public async Task Example_purchasing_table_on_the_allowlist_is_the_only_one_that_reaches_a_connection(string name)
+    {
+        // Control: an allowlisted object passes every app-side check and reaches the connection
+        // attempt, which this test factory refuses. Proves the refusals above are the allowlist's doing.
+        var (reader, factory) = ReaderWith(SourceOptions(new[] { name }));
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() => reader.ReadAsync(new MabnaQuery(name, new[] { "Id" })));
+        Assert.Equal(1, factory.Opens);
+    }
+
+    [Fact]
+    public void Example_allowlist_file_holds_only_the_purchasing_examples_and_no_excluded_name()
+    {
+        var entries = MabnaObjectPolicy.LoadEntries(new MabnaSourceOptions { AllowlistFile = ExampleAllowlistPath }).ToList();
+
+        Assert.Equal(5, entries.Count);
+        Assert.All(entries, e => Assert.False(MabnaObjectPolicy.IsExcluded(e.Split('.')[^1])));
+    }
+
+    /// <summary>Counts connection attempts; the attempt itself fails without touching any network.</summary>
+    private sealed class CountingConnectionFactory(MabnaSourceOptions options)
+        : MabnaConnectionFactory(Microsoft.Extensions.Options.Options.Create(options))
+    {
+        public int Opens { get; private set; }
+
+        public override Microsoft.Data.SqlClient.SqlConnection Create()
+        {
+            Opens++;
+            throw new InvalidOperationException("unit test: the source is never contacted");
+        }
+    }
 }

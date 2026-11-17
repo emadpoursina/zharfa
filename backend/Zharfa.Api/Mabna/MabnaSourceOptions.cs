@@ -30,7 +30,7 @@ public sealed class MabnaSourceOptions
     public string? ConnectionString { get; set; }
 
     /// <summary>Per-command timeout (seconds). Clamped to 1..<see cref="CommandTimeoutCeilingSeconds"/>.</summary>
-    public int CommandTimeoutSeconds { get; set; } = 30;
+    public int CommandTimeoutSeconds { get; set; } = 60;
 
     /// <summary>Connect timeout (seconds) applied to the connection string.</summary>
     public int ConnectTimeoutSeconds { get; set; } = 15;

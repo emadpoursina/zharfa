@@ -24,4 +24,13 @@
     <ProjectReference Include="../Zharfa.Api/Zharfa.Api.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <None Include="../../deploy/mabna-sim/example/purchase-source-map.example.json" Link="example/purchase-source-map.example.json">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+    <None Include="../../deploy/mabna-sim/example/purchase-allowlist.example.txt" Link="example/purchase-allowlist.example.txt">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+  </ItemGroup>
+
 </Project>
