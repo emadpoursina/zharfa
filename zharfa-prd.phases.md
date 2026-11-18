@@ -38,7 +38,7 @@
 - [ ] Reports by vendor, product, and category, the monthly trend, most-purchased products, returns, and transaction history all open, filter, sort, search, and paginate
 - [ ] Clicking a report row shows the purchase documents and lines behind it, and their sum equals the row
 - [ ] Comparing three vendors over six months shows all five measures per vendor; selecting six vendors is refused with the limit stated
-- [ ] Period comparison shows the previous period of equal length
+- [ ] Period comparison: presets compare with the previous Jalali month, quarter, or year; a custom range compares with the same number of days just before it
 - [ ] Browser-print of a report yields a readable Persian RTL page stating period and filters
 **Out of scope:** Vendor balance on the profile (Phase 6), role-specific visibility (Phase 3), export and saved reports (Phase 5).
 **Spec:** specs/004-vendor-purchasing-reports
