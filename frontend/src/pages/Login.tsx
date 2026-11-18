@@ -1,13 +1,19 @@
 import { useState, type FormEvent } from 'react';
-import { apiPost, ApiError } from '../services/api';
-
-interface UserInfo {
-  username: string;
-  role: string;
-}
+import { apiPost, ApiError, type Me } from '../services/api';
 
 interface LoginProps {
-  onLoginSuccess: (user: UserInfo) => void;
+  /** Receives the server's `Me` (role label, permissions and the forced-change flag). */
+  onLoginSuccess: (user: Me) => void;
+}
+
+/**
+ * Lockout text (423, contracts/api.md §1): the server message, followed by the time the lock ends when the server
+ * sends it. The time is already in Persian digits.
+ */
+function lockoutMessage(error: ApiError): string {
+  const data = error.data as { lockedUntilJalali?: unknown } | undefined;
+  const until = typeof data?.lockedUntilJalali === 'string' ? data.lockedUntilJalali : null;
+  return until ? `${error.message} تا ساعت ${until}` : error.message;
 }
 
 export function Login({ onLoginSuccess }: LoginProps) {
@@ -29,7 +35,7 @@ export function Login({ onLoginSuccess }: LoginProps) {
     setErrorMessage(null);
 
     try {
-      const user = await apiPost<UserInfo>('/api/auth/login', {
+      const user = await apiPost<Me>('/api/auth/login', {
         username: trimmedUsername,
         password,
       });
@@ -38,6 +44,8 @@ export function Login({ onLoginSuccess }: LoginProps) {
       if (err instanceof ApiError) {
         if (err.status === 401) {
           setErrorMessage('نام کاربری یا گذرواژه اشتباه است.');
+        } else if (err.status === 423) {
+          setErrorMessage(lockoutMessage(err));
         } else {
           setErrorMessage(err.message || 'خطایی در ورود به سیستم رخ داد.');
         }
@@ -89,7 +97,7 @@ export function Login({ onLoginSuccess }: LoginProps) {
               value={username}
               onChange={(e) => setUsername(e.target.value)}
               className="w-full px-3.5 py-2.5 rounded-lg border border-gray-300 text-gray-900 shadow-xs focus:outline-hidden focus:ring-2 focus:ring-blue-600 focus:border-blue-600 disabled:bg-gray-100 disabled:cursor-not-allowed transition"
-              placeholder="admin یا manager"
+              placeholder="admin"
             />
           </div>
 

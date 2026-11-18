@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { DataModeBadge } from '../components/DataModeBadge';
+import { DataQualityNotice } from '../components/DataQualityNotice';
 import { JalaliMonthPicker } from '../components/JalaliMonthPicker';
 import { KpiCard, type KpiComparisonView } from '../components/KpiCard';
 import { TopList } from '../components/TopList';
@@ -13,6 +14,8 @@ interface OverviewPurchasingProps {
   serverJalaliToday: string;
   /** Opens a vendor's profile for the Overview's month (spec 004 T048). */
   onOpenVendor?: (vendor: { key: string; name: string }, month: string) => void;
+  /** Show link to settings/data-quality (modules.dataQuality). */
+  showLink?: boolean;
 }
 
 const UNAVAILABLE_TEXT = 'داده در دسترس نیست';
@@ -69,7 +72,7 @@ function comparisonView(overview: PurchasingOverview): KpiComparisonView | null 
  * Manager's Overview of real purchasing (spec 003 US5, FR-025..FR-029). Every figure is computed on the
  * server and only rendered here. Changing the Jalali month refetches the whole Overview.
  */
-export function OverviewPurchasing({ serverJalaliToday, onOpenVendor }: OverviewPurchasingProps) {
+export function OverviewPurchasing({ serverJalaliToday, onOpenVendor, showLink }: OverviewPurchasingProps) {
   const [month, setMonth] = useState(() => monthKeyOf(serverJalaliToday));
   const [overview, setOverview] = useState<PurchasingOverview | null>(null);
   const [loading, setLoading] = useState(true);
@@ -141,6 +144,8 @@ export function OverviewPurchasing({ serverJalaliToday, onOpenVendor }: Overview
             <span className="text-gray-400"> · </span>
             <span>{BASIS_TEXT[overview.discountBasis] ?? overview.discountBasis}</span>
           </p>
+
+          <DataQualityNotice notice={overview.dataQuality} showLink={Boolean(showLink)} />
 
           {overview.unavailable.length > 0 && (
             <div className="text-sm text-amber-900 bg-amber-50 border border-amber-200 rounded-lg p-3 space-y-1">

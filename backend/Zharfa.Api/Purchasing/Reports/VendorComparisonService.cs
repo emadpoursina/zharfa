@@ -9,6 +9,7 @@ using System.Threading.Tasks;
 using Npgsql;
 using NpgsqlTypes;
 using Zharfa.Api.Analytics;
+using Zharfa.Api.DataQuality;
 using Zharfa.Api.Purchasing;
 
 /// <summary>One vendor of the comparison, in request order (contracts/api.md §4).</summary>
@@ -38,16 +39,20 @@ public sealed record VendorComparisonResponse(
     IReadOnlyList<string> Months,
     IReadOnlyList<VendorComparisonVendor> Vendors,
     [property: System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
-    bool? Truncated,
+    bool? Truncated = null,
     [property: System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
-    int? Limit);
+    int? Limit = null,
+    DataQualityNotice? DataQuality = null);
 
 /// <summary>
 /// Side-by-side comparison of two to five vendors over the selected period (spec 004 T060, US4). One grouped query
 /// over <c>mabna.fn_purchase_lines</c> for the measures and one for the monthly net, so each vendor equals its
 /// profile totals for the same period (SC-005). Reads PostgreSQL only.
 /// </summary>
-public sealed class VendorComparisonService(NpgsqlDataSource dataSource, PurchasingReportService reports)
+public sealed class VendorComparisonService(
+    NpgsqlDataSource dataSource,
+    PurchasingReportService reports,
+    DataQualityNoticeService notices)
 {
     public const int MinVendors = 2;
     public const int MaxVendors = 5;
@@ -203,6 +208,12 @@ public sealed class VendorComparisonService(NpgsqlDataSource dataSource, Purchas
                 Trend: trend));
         }
 
+        DataQualityNotice? dqNotice = envelope.DataQuality;
+        if (!context.Empty)
+        {
+            dqNotice = await notices.ForScopeAsync(ReportId, scope, SearchTarget.Vendor, keys, ct);
+        }
+
         var response = new VendorComparisonResponse(
             envelope.DataLabel,
             envelope.LastSuccessfulSync,
@@ -215,7 +226,8 @@ public sealed class VendorComparisonService(NpgsqlDataSource dataSource, Purchas
             buckets.Select(b => b.Month.Key).ToList(),
             vendors,
             print ? false : null,
-            print ? PrintLimit.Limit : null);
+            print ? PrintLimit.Limit : null,
+            dqNotice);
         return (response, null);
     }
 

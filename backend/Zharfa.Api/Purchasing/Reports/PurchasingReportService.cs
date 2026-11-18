@@ -9,6 +9,8 @@ using System.Threading.Tasks;
 using Microsoft.Extensions.Options;
 using Npgsql;
 using Zharfa.Api.Analytics;
+using Zharfa.Api.Audit;
+using Zharfa.Api.DataQuality;
 using Zharfa.Api.Mabna;
 using Zharfa.Api.Mabna.Sync;
 using Zharfa.Api.Platform;
@@ -36,7 +38,8 @@ public sealed class PurchasingReportService(
     IOptions<MabnaSyncOptions> mabnaSyncOptions,
     IOptions<SyncOptions> syncOptions,
     MabnaObjectPolicy policy,
-    DataModeOptions dataMode)
+    DataModeOptions dataMode,
+    DataQualityNoticeService notices)
 {
     public const int CommandTimeoutSeconds = 15;
     public const string UnknownLabel = "نامشخص";
@@ -86,11 +89,11 @@ public sealed class PurchasingReportService(
     public Task<ReportPrintPage<TrendRow>> TrendPrintAsync(ReportFilter filter, CancellationToken ct) =>
         Guard(async () => Print(await LoadTrendAsync(filter, print: true, ct)));
 
-    public Task<ReportTablePage<DocumentRow>> DocumentsAsync(ReportFilter filter, CancellationToken ct) =>
-        Guard(async () => Table(await LoadDocumentsAsync(filter, print: false, ct), filter.PageSize));
+    public Task<ReportTablePage<DocumentRow>> DocumentsAsync(ReportFilter filter, CancellationToken ct, string report = "documents") =>
+        Guard(async () => Table(await LoadDocumentsAsync(filter, print: false, report, ct), filter.PageSize));
 
-    public Task<ReportPrintPage<DocumentRow>> DocumentsPrintAsync(ReportFilter filter, CancellationToken ct) =>
-        Guard(async () => Print(await LoadDocumentsAsync(filter, print: true, ct)));
+    public Task<ReportPrintPage<DocumentRow>> DocumentsPrintAsync(ReportFilter filter, CancellationToken ct, string report = "documents") =>
+        Guard(async () => Print(await LoadDocumentsAsync(filter, print: true, report, ct)));
 
     /// <summary>
     /// The unfiltered document header with its amounts, and its lines in scope (product, category and match
@@ -284,7 +287,8 @@ public sealed class PurchasingReportService(
 
         var period = context.Period;
         var monthBuckets = period.TrendMonths(profile: false);
-        var current = await ReadTrendMonthsAsync(TrendWindow(period, monthBuckets, context.Scope), ct);
+        var trendScope = TrendWindow(period, monthBuckets, context.Scope);
+        var current = await ReadTrendMonthsAsync(trendScope, ct);
         var firstData = await ReadFirstDataMonthAsync(ct);
 
         // Comparison (T065): each row's previous value is the same Jalali month one period earlier, i.e. the
@@ -292,6 +296,7 @@ public sealed class PurchasingReportService(
         // the days of its previous range.
         Dictionary<(int Year, int Month), (decimal Net, decimal Quantity)>? previousByMonth = null;
         var offset = 0;
+        ReportQueryScope? trendPreviousScope = null;
         if (context.PreviousScope is { } previousScope)
         {
             offset = period.StartMonth.Index - period.Previous().StartMonth.Index;
@@ -305,7 +310,20 @@ public sealed class PurchasingReportService(
                 toKey = Math.Min(toKey, previousScope.ToKey);
             }
 
-            previousByMonth = await ReadTrendMonthsAsync(context.Scope with { FromKey = fromKey, ToKey = toKey }, ct);
+            trendPreviousScope = context.Scope with { FromKey = fromKey, ToKey = toKey };
+            previousByMonth = await ReadTrendMonthsAsync(trendPreviousScope, ct);
+        }
+
+        DataQualityNotice? trendNotice = null;
+        if (context.Envelope.LastSuccessfulSync is not null)
+        {
+            trendNotice = await notices.ForScopeAsync(
+                ReportKeys.Trend,
+                trendScope,
+                SearchTarget.DocumentOrVendor,
+                null,
+                ct,
+                comparisonScope: trendPreviousScope);
         }
 
         var buckets = new List<(TrendRow Row, decimal NetValue)>();
@@ -356,12 +374,12 @@ public sealed class PurchasingReportService(
             : ordered.Skip((page - 1) * filter.PageSize).Take(filter.PageSize).Select(b => b.Row).ToList();
 
         return new TableData<TrendRow>(
-            context.Envelope,
+            context.Envelope with { DataQuality = trendNotice },
             total,
             page,
             filter.Sort,
             Dir(filter),
-            await ReadTrendTotalsAsync(TrendWindow(period, monthBuckets, context.Scope), ct),
+            await ReadTrendTotalsAsync(trendScope, ct),
             previousByMonth is null ? null : new ReportTotals(Net: Amount(previousTotal)),
             rows);
     }
@@ -415,9 +433,9 @@ public sealed class PurchasingReportService(
 
     // ----- documents (transactions report and drill-down list) -------------------------------------------------
 
-    private async Task<TableData<DocumentRow>> LoadDocumentsAsync(ReportFilter filter, bool print, CancellationToken ct)
+    private async Task<TableData<DocumentRow>> LoadDocumentsAsync(ReportFilter filter, bool print, string report, CancellationToken ct)
     {
-        var context = await ResolveAsync("documents", filter, ct);
+        var context = await ResolveAsync(report, filter, ct);
         if (context.Empty)
         {
             return TableData<DocumentRow>.Empty(context.Envelope, filter);
@@ -533,7 +551,8 @@ public sealed class PurchasingReportService(
             envelope.Unavailable,
             header!,
             lines,
-            new ReportLineTotals(Amount(lineAmount), Amount(signed), Amount(quantity)));
+            new ReportLineTotals(Amount(lineAmount), Amount(signed), Amount(quantity)),
+            envelope.DataQuality);
     }
 
     // ----- shared: scope, envelope, availability --------------------------------------------------------------
@@ -622,6 +641,27 @@ public sealed class PurchasingReportService(
             }
         }
 
+        DataQualityNotice? notice = null;
+        if (lastSynced is not null)
+        {
+            var reportKey = report switch
+            {
+                "documents" => ReportKeys.DrillDown,
+                _ => report,
+            };
+            var searchTarget = ReportCatalog.TryGet(report, out var catDef)
+                ? catDef!.SearchTarget
+                : report switch
+                {
+                    "documents" => ReportCatalog.Documents.SearchTarget,
+                    "vendors" => ReportCatalog.Directory.SearchTarget,
+                    "vendor-profile" => VendorDirectoryService.ProfileDefinition.SearchTarget,
+                    "vendors-compare" => VendorComparisonService.Definition.SearchTarget,
+                    _ => SearchTarget.DocumentOrVendor,
+                };
+            notice = await notices.ForScopeAsync(reportKey, scope, searchTarget, null, ct, comparisonScope: previousScope);
+        }
+
         var envelope = new ReportEnvelope(
             DataLabel: dataMode.DataLabel,
             LastSuccessfulSync: lastSynced is { } utc ? new ReportSyncTime(SyncTimeText.Iso(utc, zone), SyncTimeText.Jalali(utc, zone)) : null,
@@ -631,7 +671,8 @@ public sealed class PurchasingReportService(
             Period: ToDto(period),
             PreviousPeriod: previousPeriod,
             Filters: await FilterEchoAsync(filter, ct),
-            Unavailable: unavailable);
+            Unavailable: unavailable,
+            DataQuality: notice);
 
         return new ReportContext(
             Empty: lastSynced is null || gateReason is not null || categoryFilterUnusable,
@@ -794,7 +835,8 @@ public sealed class PurchasingReportService(
             e.DataLabel, e.LastSuccessfulSync, e.Currency, e.CurrencyLabel, e.DiscountBasis,
             e.Period, e.PreviousPeriod, e.Filters, e.Unavailable,
             data.Page, pageSize, data.TotalRows, data.Sort, data.Dir,
-            data.Totals, data.PreviousTotals, data.Rows);
+            data.Totals, data.PreviousTotals, data.Rows,
+            e.DataQuality);
     }
 
     /// <summary>Print twin: the rows were fetched with LIMIT 1001 (or the trend's full list); PrintLimit keeps 1,000.</summary>
@@ -806,7 +848,8 @@ public sealed class PurchasingReportService(
             e.DataLabel, e.LastSuccessfulSync, e.Currency, e.CurrencyLabel, e.DiscountBasis,
             e.Period, e.PreviousPeriod, e.Filters, e.Unavailable,
             shaped.TotalRows, shaped.Truncated, shaped.Limit,
-            data.Totals, data.PreviousTotals, shaped.Rows);
+            data.Totals, data.PreviousTotals, shaped.Rows,
+            e.DataQuality);
     }
 
     private static string Dir(ReportFilter filter) => filter.Descending ? "desc" : "asc";

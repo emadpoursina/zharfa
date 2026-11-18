@@ -58,11 +58,12 @@ services:
       Sync__WeeklyFullLoadDay: ${Sync__WeeklyFullLoadDay:-}
       Sync__PageSize: ${Sync__PageSize:-}
       Sync__MaxRejectedRows: ${Sync__MaxRejectedRows:-}
-      # First-run production accounts (used once, when app_user is empty; never logged). Blank in demo installs.
+      # Data-quality earliest plausible document date (Jalali yyyy-mm-dd); blank = default 1390-01-01.
+      DataQuality__EarliestJalaliDate: ${DataQuality__EarliestJalaliDate:-}
+      # First-run production Admin (used only while no active Admin exists; never logged). Blank in demo installs.
       Bootstrap__AdminUsername: ${Bootstrap__AdminUsername:-}
       Bootstrap__AdminPassword: ${Bootstrap__AdminPassword:-}
-      Bootstrap__ManagerUsername: ${Bootstrap__ManagerUsername:-}
-      Bootstrap__ManagerPassword: ${Bootstrap__ManagerPassword:-}
+      Bootstrap__AdminPasswordFile: ${Bootstrap__AdminPasswordFile:-}
       # Container clock in Tehran time, matching the default Sync__TimeZone (Asia/Tehran).
       TZ: Asia/Tehran
     volumes:

@@ -55,15 +55,46 @@ Use a fresh database (`./deploy/zharfa.sh reset`, which deletes data) to change 
 ### Demo accounts (demo mode only)
 
 Seed demonstration accounts (documented demonstration credentials, change before any real use):
-- Manager: `manager` / `manager123` (view dashboard, inventory alerts, receivables, AI chat)
-- Administrator: `admin` / `admin123` (view dashboard, admin provider status, reconciliation)
+- Administrator: `admin` / `admin123` (role `admin`: overview, purchasing reports, purchasing transactions, admin)
+- Management: `manager` / `manager123` (role `management`: overview, purchasing reports, purchasing transactions, vendor financials, AI query, export)
+- Purchasing: `purchasing` / `purchasing123` (role `purchasing`: overview, purchasing reports, purchasing transactions, AI query, export)
+- Finance: `finance` / `finance123` (role `finance`: overview, purchasing reports, purchasing transactions, vendor financials, AI query, export)
 
-### Production bootstrap accounts
+### Production bootstrap accounts & Docker secret
 
-In `production`, the first two accounts come from the environment and are created once, when `app_user` is empty:
-`Bootstrap__AdminUsername` / `Bootstrap__AdminPassword` and `Bootstrap__ManagerUsername` / `Bootstrap__ManagerPassword`.
-Each password must be at least 12 characters. Missing or short values refuse startup. The passwords are never logged.
-Leave them blank in demo installs.
+In `production`, the first Admin comes from the environment or a secret file. It is created only while no active Admin exists:
+`Bootstrap__AdminUsername` and either `Bootstrap__AdminPassword` or `Bootstrap__AdminPasswordFile` (a file path).
+The password must be at least 12 characters. The first Admin must change the password at the first sign-in (`must_change_password`).
+Missing or short values refuse startup. The passwords are never logged. Leave them blank in demo installs.
+The Demo 1 Manager bootstrap keys (`Bootstrap__ManagerUsername` / `Bootstrap__ManagerPassword`) are retired and removed.
+
+**Docker secret example:**
+To supply the initial admin password via Docker secrets without embedding it in environment files, define a secret in `docker-compose.yml`:
+```yaml
+services:
+  api:
+    secrets:
+      - zharfa_admin_password
+    environment:
+      Bootstrap__AdminUsername: admin
+      Bootstrap__AdminPasswordFile: /run/secrets/zharfa_admin_password
+
+secrets:
+  zharfa_admin_password:
+    file: ./secrets/admin_password.txt  # file with >= 12 characters password, trailing newline stripped
+```
+
+### Account lockout
+
+5 consecutive failed sign-in attempts lock the account for 15 minutes.
+Lockout events are audited (`auth.locked`). An Admin can unlock a locked account prematurely from the **کاربران و نقش‌ها** settings page.
+
+### Settings pages (Admin only)
+
+- **تنظیمات ← کاربران و نقش‌ها** (`#/settings/users`): user creation, role assignments, password reset, unlock, activate/deactivate.
+- **تنظیمات ← گزارش رویدادها** (`#/settings/audit`): append-only audit trail filterable by user, action and Jalali date range; server-paged, no secrets or report figures.
+- **تنظیمات ← کیفیت داده** (`#/settings/data-quality`): 7 issue types with counts, examples, affected reports, deferred sub-checks and rejected-at-sync counts.
+- **تنظیمات ← همگام‌سازی داده** (`#/settings/sync`): manual sync trigger, status and job logs.
 
 ## Purchasing sync (Mabna, read-only)
 
@@ -120,13 +151,14 @@ Never use this override against real Mabna or a production install.
 All configuration is supplied via environment variables (`deploy/.env` or server env). `deploy/.env.example`
 documents every key with an empty value:
 - `ZHARFA_DATA_MODE`: required, `production` or `demo` (see Data mode above).
-- `Bootstrap__AdminUsername`, `Bootstrap__AdminPassword`, `Bootstrap__ManagerUsername`, `Bootstrap__ManagerPassword`: production bootstrap accounts (see above).
+- `Bootstrap__AdminUsername`, `Bootstrap__AdminPassword`, `Bootstrap__AdminPasswordFile`: production first Admin (see above).
 - `ZHARFA_MABNA_CONFIG_DIR`: host folder with the source map and allowlist (default `./mabna-config`, i.e. `deploy/mabna-config/`).
 - `ConnectionStrings__Mabna`: read-only Mabna login. Blank keeps the connector disabled. Never commit it.
 - `MabnaSource__AllowlistFile`, `MabnaSource__CommandTimeoutSeconds` (default `60`): the read allowlist and per-query timeout.
 - `MabnaSync__SourceMapFile`: container path of the purchasing source map.
 - `Sync__NightlyTime` (`02:00`), `Sync__TimeZone` (`Asia/Tehran`), `Sync__WeeklyFullLoadDay` (`Friday`), `Sync__PageSize` (`5000`, at most `MabnaSource__MaxRows`), `Sync__MaxRejectedRows` (`0`). Blank means the default.
 - `Purchasing__DiscountBasis`: `line` (default) or `lineAndDocument`.
+- `DataQuality__EarliestJalaliDate`: default `1390-01-01`. Set on-site to the start date of Mabna's first fiscal year. Purchase documents dated earlier are flagged.
 - `AI_PROVIDER_NAME`: Display name of the cloud AI provider (e.g. OpenAI).
 - `AI_PROVIDER_ENDPOINT`: API base URL including any `/v1` path (e.g. `https://api.openai.com/v1`).
 - `AI_PROVIDER_MODEL`: Model identifier (e.g. `gpt-4o-mini`).

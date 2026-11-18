@@ -88,6 +88,24 @@ scoped AS (
         _ => throw new ArgumentOutOfRangeException(nameof(target)),
     };
 
+    /// <summary>
+    /// Notice query (data-model §3.5): returns distinct (issue_type, record_ref) pairs for one scope,
+    /// filtered by the report's mapped types and optional vendor keys.
+    /// </summary>
+    public static string DataQualityNotice(SearchTarget target) =>
+        BaseCte.Replace("{SEARCH}", SearchPredicate(target)) + @",
+scope_lines AS (SELECT DISTINCT document_id, line_id, product_id FROM scoped
+                WHERE @vendorKeys::text[] IS NULL OR vendor_source_key = ANY(@vendorKeys::text[])),
+run AS (SELECT id FROM data_quality_run WHERE status = 'succeeded' ORDER BY id DESC LIMIT 1),
+hit AS (
+  SELECT DISTINCT i.issue_type, i.record_ref
+  FROM data_quality_issue i JOIN run ON i.run_id = run.id
+  WHERE i.issue_type = ANY(@types::text[])
+    AND ((i.record_kind = 'line'     AND i.line_id     IN (SELECT line_id     FROM scope_lines))
+      OR (i.record_kind = 'document' AND i.document_id IN (SELECT document_id FROM scope_lines))
+      OR (i.record_kind = 'product'  AND i.product_id  IN (SELECT product_id  FROM scope_lines))))
+SELECT issue_type, record_ref FROM hit";
+
     // Measures over the scoped lines (the same figures as Phase 1: gross = invoice lines, returns = return lines).
     private const string GroupMeasures = @"
     SUM(CASE WHEN doc_type = 'invoice' THEN line_amount ELSE 0 END) AS gross,

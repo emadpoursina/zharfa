@@ -4,13 +4,14 @@ using System;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.AspNetCore.Authorization;
+using Zharfa.Api.Security;
 using Microsoft.AspNetCore.Mvc;
 using Zharfa.Api.Analytics;
 using Zharfa.Api.Platform;
 
 [ApiController]
 [Route("api/sales")]
-[Authorize(Roles = "manager,admin")]
+[Authorize(Policy = Permissions.Overview)]
 [DemoOnly]
 public class SalesController : ControllerBase
 {

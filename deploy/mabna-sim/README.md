@@ -311,3 +311,31 @@ Regenerate with the candidate map and the allowlist from `example/` as in §3. G
 if any, must stay generic (no real names) in `gen_seed.py` and/or `seedgen.py`. The example map
 (`example/purchase-source-map.example.json`) already carries the Phase 2 items with the made-up
 names `SimVendorCode`, `SimDrugGroupID` and `dbo.SimDrugGroup` (`DrugGroupID`, `DrugGroupName`).
+
+## Data-quality bad records (spec 005, US4)
+
+`dq_bad_records.py` seeds synthetic bad records into the simulator so the Data quality page and the report notices can be
+tested (contracts/sim-bad-records.md). It is generic: every table and column name is read from the purchase source map.
+
+```bash
+# 1. Generate (writes two scripts into the gitignored generated/dq folder; the Jalali date is a day of the test month)
+python3 deploy/mabna-sim/dq_bad_records.py --map deploy/mabna-sim/generated/purchase-source-map.json --date 1405/07/15
+
+# 2. Apply to the simulator only (sqlcmd -b stops at the first error; the password comes from the environment)
+sqlcmd -S 127.0.0.1,14330 -U sa -P "$MABNA_SIM_SA_PASSWORD" -b -i deploy/mabna-sim/generated/dq/dq-apply.sql
+
+# 3. Revert to the baseline (removes every seeded row and drops the bookkeeping table)
+sqlcmd -S 127.0.0.1,14330 -U sa -P "$MABNA_SIM_SA_PASSWORD" -b -i deploy/mabna-sim/generated/dq/dq-revert.sql
+```
+
+The apply script ends with the manifest (`issue_type`, `seeded`). Expected seeded counts with the example map and every
+item mapped: missing-values 4, duplicate-records 1, broken-relationships 3, inconsistent-product-ids 1, invalid-dates 2,
+unexpected-quantities 2, inconsistent-amounts 3. The tracked example maps no `purchaseInvoice.docDiscount` column, so its
+record 16 (document discount) is skipped and inconsistent-amounts shows 2; the skipped records are listed after the manifest.
+
+Counts rise by exactly the seeded number after the next sync; the synced copy already has baseline issues from the
+Phase 2 scenario, so compare with the baseline counts taken before applying (research R17). After the revert and the next
+sync the page returns to the baseline.
+
+The `generated/` folder is gitignored: the scripts and their output never enter the repository, and Zharfa itself never
+runs them. Use the simulator only; the scripts are for the offline development database.

@@ -35,9 +35,9 @@ export Sync__NightlyTime="02:00" Sync__TimeZone="Asia/Tehran" Sync__WeeklyFullLo
 export AiProvider__ApiKey="..."                 # server env / Docker secrets only
 ```
 
-Production only: `Bootstrap__AdminUsername`, `Bootstrap__AdminPassword`, `Bootstrap__ManagerUsername`
-and `Bootstrap__ManagerPassword` create the first two accounts once, when `app_user` is empty
-(passwords at least 12 characters, never logged). Blank `Sync__*` values fall back to their defaults.
+Production only: `Bootstrap__AdminUsername` and `Bootstrap__AdminPassword` (or `Bootstrap__AdminPasswordFile`)
+create the first Admin while no active Admin exists; that Admin must change the password at first sign-in
+(password at least 12 characters, never logged). Blank `Sync__*` values fall back to their defaults.
 The full key list and defaults are in `specs/003-real-purchase-data/contracts/cli-and-config.md` §2.
 
 `AiProvider__ApiKey`, DB passwords and Mabna credentials are never written to `appsettings.json`,

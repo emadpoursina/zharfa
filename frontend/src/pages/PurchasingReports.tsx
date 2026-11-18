@@ -12,6 +12,7 @@ import {
 } from '../services/api';
 import { periodParams, useReportQuery, type ReportFilterName, type ReportFilters } from '../hooks/useReportQuery';
 import { comparisonColumns } from '../components/ComparisonCells';
+import { DataQualityNotice } from '../components/DataQualityNotice';
 import { DocumentLinesPanel } from '../components/DocumentLinesPanel';
 import { DrillDownDialog } from '../components/DrillDownDialog';
 import { FilterBar } from '../components/FilterBar';
@@ -45,6 +46,7 @@ interface ReportScreenProps<TRow> {
   landscape?: boolean;
   /** Totals line for the quantity note (quantityMissingLines). */
   quantityNote?: (totals: ReportTotals | undefined) => string | null;
+  showLink?: boolean;
 }
 
 interface DrillState {
@@ -83,7 +85,7 @@ function drillBase(filters: ReportFilters, declared: ReportFilterName[], drill: 
  * them, the statement of period and filters, and the print twin.
  */
 function ReportScreen<TRow>(props: ReportScreenProps<TRow>) {
-  const { title, description, path, declared, searchLabel, sortKeys, initialSort, initialDir, serverToday, rowKey, isUnknown, drillOf, drillTitle, expandable, landscape = false, quantityNote } = props;
+  const { title, description, path, declared, searchLabel, sortKeys, initialSort, initialDir, serverToday, rowKey, isUnknown, drillOf, drillTitle, expandable, landscape = false, quantityNote, showLink } = props;
   const query = useReportQuery<TRow>({
     path,
     declared,
@@ -135,6 +137,7 @@ function ReportScreen<TRow>(props: ReportScreenProps<TRow>) {
       />
 
       {data && <ReportStatusLine envelope={data} />}
+      <DataQualityNotice notice={data?.dataQuality} showLink={Boolean(showLink)} />
       {error && (
         <p role="alert" className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">
           {error}
@@ -229,6 +232,7 @@ function ReportScreen<TRow>(props: ReportScreenProps<TRow>) {
           baseParams={drill.base}
           drill={drill.drill}
           onClose={() => setDrill(null)}
+          showLink={showLink}
         />
       )}
 
@@ -326,7 +330,12 @@ const rowKeyGrouped = (row: GroupedRow) => `${row.key ?? '~unknown'}`;
 
 // ----- the seven reports ---------------------------------------------------------------------------------------
 
-function ByVendorReport({ serverToday }: { serverToday: string }) {
+interface SubReportProps {
+  serverToday: string;
+  showLink?: boolean;
+}
+
+function ByVendorReport({ serverToday, showLink }: SubReportProps) {
   return (
     <ReportScreen<GroupedRow>
       title="خرید به تفکیک تأمین‌کننده"
@@ -343,6 +352,7 @@ function ByVendorReport({ serverToday }: { serverToday: string }) {
       drillOf={(row) => row.drill}
       drillTitle={(row) => `اسناد ${row.name}`}
       quantityNote={GROUPED_NOTE}
+      showLink={showLink}
       buildColumns={(data, compare) => [
         { id: 'name', label: 'تأمین‌کننده', sortKey: 'name', render: (row) => (row.code ? `${row.name} (${row.code})` : row.name) },
         ...groupedMeasures(data, true),
@@ -352,7 +362,7 @@ function ByVendorReport({ serverToday }: { serverToday: string }) {
   );
 }
 
-function ByProductReport({ serverToday }: { serverToday: string }) {
+function ByProductReport({ serverToday, showLink }: SubReportProps) {
   return (
     <ReportScreen<GroupedRow>
       title="خرید به تفکیک کالا"
@@ -369,6 +379,7 @@ function ByProductReport({ serverToday }: { serverToday: string }) {
       drillOf={(row) => row.drill}
       drillTitle={(row) => `اسناد ${row.name}`}
       quantityNote={GROUPED_NOTE}
+      showLink={showLink}
       buildColumns={(data, compare) => [
         { id: 'name', label: 'کالا', sortKey: 'name', render: (row) => row.name },
         ...groupedMeasures(data, false),
@@ -378,7 +389,7 @@ function ByProductReport({ serverToday }: { serverToday: string }) {
   );
 }
 
-function ByCategoryReport({ serverToday }: { serverToday: string }) {
+function ByCategoryReport({ serverToday, showLink }: SubReportProps) {
   return (
     <ReportScreen<GroupedRow>
       title="خرید به تفکیک گروه دارویی"
@@ -395,6 +406,7 @@ function ByCategoryReport({ serverToday }: { serverToday: string }) {
       drillOf={(row) => row.drill}
       drillTitle={(row) => `اسناد ${row.name}`}
       quantityNote={GROUPED_NOTE}
+      showLink={showLink}
       buildColumns={(data, compare) => [
         { id: 'name', label: 'گروه دارویی', sortKey: 'name', render: (row) => row.name },
         ...groupedMeasures(data, false),
@@ -404,7 +416,7 @@ function ByCategoryReport({ serverToday }: { serverToday: string }) {
   );
 }
 
-function TopProductsReport({ serverToday }: { serverToday: string }) {
+function TopProductsReport({ serverToday, showLink }: SubReportProps) {
   return (
     <ReportScreen<GroupedRow>
       title="پرخریدترین کالاها"
@@ -421,6 +433,7 @@ function TopProductsReport({ serverToday }: { serverToday: string }) {
       drillOf={(row) => row.drill}
       drillTitle={(row) => `اسناد ${row.name}`}
       quantityNote={GROUPED_NOTE}
+      showLink={showLink}
       buildColumns={(data, compare) => [
         { id: 'rank', label: 'رتبه', render: (row) => (row.rank ? faNum(row.rank) : '—') },
         { id: 'name', label: 'کالا', render: (row) => row.name },
@@ -431,7 +444,7 @@ function TopProductsReport({ serverToday }: { serverToday: string }) {
   );
 }
 
-function TrendReport({ serverToday }: { serverToday: string }) {
+function TrendReport({ serverToday, showLink }: SubReportProps) {
   return (
     <ReportScreen<TrendRow>
       title="روند ماهانه خرید"
@@ -446,6 +459,7 @@ function TrendReport({ serverToday }: { serverToday: string }) {
       rowKey={(row) => row.month}
       drillOf={(row) => row.drill}
       drillTitle={(row) => `اسناد ${row.label}`}
+      showLink={showLink}
       buildColumns={(data, compare) => [
         { id: 'month', label: 'ماه', sortKey: 'month', render: (row) => row.label },
         {
@@ -480,7 +494,7 @@ function TrendReport({ serverToday }: { serverToday: string }) {
   );
 }
 
-function ReturnsReport({ serverToday }: { serverToday: string }) {
+function ReturnsReport({ serverToday, showLink }: SubReportProps) {
   return (
     <ReportScreen<ReturnsRow>
       title="برگشت از خرید"
@@ -496,6 +510,8 @@ function ReturnsReport({ serverToday }: { serverToday: string }) {
       isUnknown={(row) => row.unknownVendor || row.unknownProduct}
       drillOf={(row) => row.drill}
       drillTitle={(row) => `برگشت‌های ${row.vendorName} — ${row.productName}`}
+      quantityNote={GROUPED_NOTE}
+      showLink={showLink}
       buildColumns={(data, compare) => [
         { id: 'vendor', label: 'تأمین‌کننده', sortKey: 'vendor', render: (row) => row.vendorName },
         { id: 'product', label: 'کالا', sortKey: 'product', render: (row) => row.productName },
@@ -528,7 +544,7 @@ function ReturnsReport({ serverToday }: { serverToday: string }) {
   );
 }
 
-function TransactionsReport({ serverToday }: { serverToday: string }) {
+function TransactionsReport({ serverToday, showLink }: SubReportProps) {
   return (
     <ReportScreen<DocumentRow>
       title="فهرست اسناد خرید"
@@ -544,6 +560,7 @@ function TransactionsReport({ serverToday }: { serverToday: string }) {
       rowKey={(row) => String(row.documentId)}
       isUnknown={(row) => row.vendorKey === null}
       expandable={(row) => <DocumentLinesPanel documentId={row.documentId} />}
+      showLink={showLink}
       buildColumns={(data) => [
         { id: 'number', label: 'شماره سند', sortKey: 'number', render: (row) => row.number },
         { id: 'date', label: 'تاریخ', sortKey: 'date', render: (row) => row.dateJalali },
@@ -600,31 +617,32 @@ type ReportId = (typeof REPORT_TABS)[number]['id'];
 
 interface PurchasingReportsProps {
   serverToday: string;
+  showLink?: boolean;
 }
 
 /**
  * The «گزارش‌های خرید» screen (spec 004 US2): the seven standard reports behind one picker. Each report keeps its own
  * filter state and resets when the picker changes.
  */
-export function PurchasingReports({ serverToday }: PurchasingReportsProps) {
+export function PurchasingReports({ serverToday, showLink }: PurchasingReportsProps) {
   const [report, setReport] = useState<ReportId>('by-vendor');
 
   const body = (() => {
     switch (report) {
       case 'by-vendor':
-        return <ByVendorReport key="by-vendor" serverToday={serverToday} />;
+        return <ByVendorReport key="by-vendor" serverToday={serverToday} showLink={showLink} />;
       case 'by-product':
-        return <ByProductReport key="by-product" serverToday={serverToday} />;
+        return <ByProductReport key="by-product" serverToday={serverToday} showLink={showLink} />;
       case 'by-category':
-        return <ByCategoryReport key="by-category" serverToday={serverToday} />;
+        return <ByCategoryReport key="by-category" serverToday={serverToday} showLink={showLink} />;
       case 'trend':
-        return <TrendReport key="trend" serverToday={serverToday} />;
+        return <TrendReport key="trend" serverToday={serverToday} showLink={showLink} />;
       case 'top-products':
-        return <TopProductsReport key="top-products" serverToday={serverToday} />;
+        return <TopProductsReport key="top-products" serverToday={serverToday} showLink={showLink} />;
       case 'returns':
-        return <ReturnsReport key="returns" serverToday={serverToday} />;
+        return <ReturnsReport key="returns" serverToday={serverToday} showLink={showLink} />;
       case 'transactions':
-        return <TransactionsReport key="transactions" serverToday={serverToday} />;
+        return <TransactionsReport key="transactions" serverToday={serverToday} showLink={showLink} />;
     }
   })();
 

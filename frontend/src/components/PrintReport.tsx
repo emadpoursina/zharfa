@@ -1,6 +1,7 @@
 import type { ReactNode } from 'react';
 import type { ReportEnvelope, ReportPrint, VendorComparison } from '../services/api';
 import { faNum, faRialFromDecimal } from '../utils/format';
+import { DataQualityNotice } from './DataQualityNotice';
 import { DataLabelBadge, type ReportColumn } from './ReportTable';
 
 interface PrintReportProps<TRow> {
@@ -30,6 +31,11 @@ function PrintHeader({ envelope, title, subtitle }: { envelope: ReportEnvelope; 
       </p>
       {envelope.filters.length > 0 && (
         <p className="text-sm">فیلترها: {envelope.filters.map((filter) => filter.label).join('، ')}</p>
+      )}
+      {envelope.dataQuality && (
+        <div className="pt-1">
+          <DataQualityNotice notice={envelope.dataQuality} showLink={false} />
+        </div>
       )}
       <p className="flex flex-wrap items-center gap-3 text-xs">
         <DataLabelBadge dataLabel={envelope.dataLabel} />

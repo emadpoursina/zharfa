@@ -14,6 +14,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Zharfa.Api.Analytics;
 using Zharfa.Api.Controllers;
 using Zharfa.Api.Platform;
+using Zharfa.Api.Security;
 
 /// <summary>
 /// T067 (spec 003 US6, FR-021..FR-023, contracts/api.md §5–§6): the <c>[DemoOnly]</c> filter decision,
@@ -93,50 +94,74 @@ public class DemoOnlyFilterTests
         Assert.True(order < -2000, $"DemoOnly order {order} must run before the model-state filter (-2000).");
     }
 
-    // ---- modules flags by mode and role (contracts/api.md §1) ----
+    // ---- modules flags by mode and permission set (contracts/api.md §7) ----
 
     [Fact]
-    public void Production_admin_sees_overview_and_data_sync_only()
+    public void Production_admin_sees_admin_modules_without_demo_pages_or_ai()
     {
-        var modules = SystemModules.For(Production, isAdmin: true);
+        var modules = SystemModules.For(Production, RolePermissions.For(Roles.Admin));
 
         Assert.True(modules.Overview);
+        Assert.True(modules.PurchasingReports);
         Assert.True(modules.DataSync);
+        Assert.True(modules.Users);
+        Assert.True(modules.AuditLog);
+        Assert.True(modules.DataQuality);
         Assert.False(modules.DemoPages);
         Assert.False(modules.Ai);
     }
 
     [Fact]
-    public void Production_manager_sees_overview_without_data_sync()
+    public void Production_purchasing_has_no_admin_modules_and_no_ai()
     {
-        var modules = SystemModules.For(Production, isAdmin: false);
+        var modules = SystemModules.For(Production, RolePermissions.For(Roles.Purchasing));
 
         Assert.True(modules.Overview);
+        Assert.True(modules.PurchasingReports);
         Assert.False(modules.DataSync);
+        Assert.False(modules.Users);
+        Assert.False(modules.AuditLog);
+        Assert.False(modules.DataQuality);
         Assert.False(modules.DemoPages);
         Assert.False(modules.Ai);
     }
 
     [Fact]
-    public void Demo_admin_sees_every_module()
+    public void Demo_admin_has_demo_pages_but_no_ai_because_admin_lacks_ai_query()
     {
-        var modules = SystemModules.For(Demo, isAdmin: true);
+        var modules = SystemModules.For(Demo, RolePermissions.For(Roles.Admin));
 
-        Assert.True(modules.Overview);
-        Assert.True(modules.DataSync);
         Assert.True(modules.DemoPages);
-        Assert.True(modules.Ai);
+        Assert.False(modules.Ai);
+        Assert.True(modules.DataSync);
     }
 
     [Fact]
-    public void Demo_manager_sees_demo_pages_and_ai_but_not_data_sync()
+    public void Demo_management_has_ai_and_no_admin_modules()
     {
-        var modules = SystemModules.For(Demo, isAdmin: false);
+        var modules = SystemModules.For(Demo, RolePermissions.For(Roles.Management));
 
-        Assert.True(modules.Overview);
-        Assert.False(modules.DataSync);
-        Assert.True(modules.DemoPages);
         Assert.True(modules.Ai);
+        Assert.True(modules.DemoPages);
+        Assert.False(modules.DataSync);
+        Assert.False(modules.Users);
+        Assert.False(modules.AuditLog);
+        Assert.False(modules.DataQuality);
+    }
+
+    [Fact]
+    public void Empty_permission_set_turns_every_module_off()
+    {
+        var modules = SystemModules.For(Demo, RolePermissions.For(null));
+
+        Assert.False(modules.Overview);
+        Assert.False(modules.DataSync);
+        Assert.False(modules.DemoPages);
+        Assert.False(modules.Ai);
+        Assert.False(modules.PurchasingReports);
+        Assert.False(modules.Users);
+        Assert.False(modules.AuditLog);
+        Assert.False(modules.DataQuality);
     }
 
     // ---- AI payload labels (FR-022, contracts/api.md §5) ----

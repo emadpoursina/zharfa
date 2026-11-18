@@ -8,9 +8,11 @@ using System.Threading.Tasks;
 using Microsoft.Extensions.Options;
 using Npgsql;
 using Zharfa.Api.Analytics;
+using Zharfa.Api.DataQuality;
 using Zharfa.Api.Mabna;
 using Zharfa.Api.Mabna.Sync;
 using Zharfa.Api.Platform;
+using Zharfa.Api.Purchasing.Reports;
 
 /// <summary>Last successful sync: ISO time with the sync zone offset, and Jalali text with Persian digits.</summary>
 public sealed record OverviewSyncTime(string At, string AtJalali);
@@ -47,7 +49,8 @@ public sealed record PurchasingOverviewResult(
     int? ActiveVendors,
     IReadOnlyList<OverviewRankedItem>? TopVendors,
     IReadOnlyList<OverviewRankedItem>? TopProducts,
-    IReadOnlyList<OverviewUnavailable> Unavailable);
+    IReadOnlyList<OverviewUnavailable> Unavailable,
+    DataQualityNotice? DataQuality = null);
 
 /// <summary>
 /// Builds the Overview (FR-025..FR-029) from the server-side purchasing functions in
@@ -63,7 +66,8 @@ public sealed class PurchasingOverviewService(
     IOptions<SyncOptions> syncOptions,
     MabnaObjectPolicy policy,
     DataModeOptions dataMode,
-    TimeProvider clock)
+    TimeProvider clock,
+    DataQualityNoticeService notices)
 {
     public const int TrendMonths = 12;
     public const int TopLimit = 5;
@@ -191,6 +195,25 @@ public sealed class PurchasingOverviewService(
         AddUnavailable(unavailable, MetricAvailability.FigureTopVendors, Reason(reasons, MetricAvailability.FigureTopVendors));
         AddUnavailable(unavailable, MetricAvailability.FigureTopProducts, Reason(reasons, MetricAvailability.FigureTopProducts));
 
+        DataQualityNotice? dqNotice = null;
+        if (lastSynced is not null)
+        {
+            var fromKey = month.Year * 10000 + month.Month * 100 + 1;
+            var toKey = month.Year * 10000 + month.Month * 100 + JalaliDate.DaysInMonth(month.Year, month.Month);
+            var scope = new ReportQueryScope(fromKey, toKey, basis);
+
+            ReportQueryScope? previousScope = null;
+            if (comparison is not null)
+            {
+                var prevMonth = month.Previous();
+                var prevFromKey = prevMonth.Year * 10000 + prevMonth.Month * 100 + 1;
+                var prevToKey = prevMonth.Year * 10000 + prevMonth.Month * 100 + JalaliDate.DaysInMonth(prevMonth.Year, prevMonth.Month);
+                previousScope = new ReportQueryScope(prevFromKey, prevToKey, basis);
+            }
+
+            dqNotice = await notices.ForScopeAsync("overview", scope, SearchTarget.Vendor, null, cancellationToken, comparisonScope: previousScope);
+        }
+
         return new PurchasingOverviewResult(
             Month: month.Key,
             MonthLabel: month.Label,
@@ -207,7 +230,8 @@ public sealed class PurchasingOverviewService(
             ActiveVendors: activeVendors,
             TopVendors: topVendors,
             TopProducts: topProducts,
-            Unavailable: unavailable);
+            Unavailable: unavailable,
+            DataQuality: dqNotice);
     }
 
     /// <summary>

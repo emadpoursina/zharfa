@@ -3,7 +3,9 @@ namespace Zharfa.Api.Controllers;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.AspNetCore.Authorization;
+using Zharfa.Api.Security;
 using Microsoft.AspNetCore.Mvc;
+using Zharfa.Api.Audit;
 using Zharfa.Api.Purchasing;
 
 /// <summary>
@@ -12,10 +14,11 @@ using Zharfa.Api.Purchasing;
 /// </summary>
 [ApiController]
 [Route("api/overview")]
-[Authorize(Roles = "manager,admin")]
+[Authorize(Policy = Permissions.Overview)]
 public sealed class OverviewController(PurchasingOverviewService overview) : ControllerBase
 {
     [HttpGet("purchasing")]
+    [AuditReportOpen(ReportKeys.Overview)]
     public async Task<IActionResult> Purchasing([FromQuery] string? month, CancellationToken cancellationToken)
     {
         JalaliMonth selected;

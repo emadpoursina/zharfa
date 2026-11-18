@@ -49,7 +49,8 @@ public sealed record VendorProfileResponse(
     IReadOnlyList<ProfileTrendRow> Trend,
     IReadOnlyList<ProfileTopProduct> TopProducts,
     IReadOnlyList<ProfileReturn> Returns,
-    ProfileDocuments Documents);
+    ProfileDocuments Documents,
+    DataQualityNotice? DataQuality = null);
 
 /// <summary>A lookup item list for the filter bar (contracts/api.md §7); unavailable only for an unusable source.</summary>
 public sealed record LookupResponse(
@@ -93,7 +94,8 @@ public sealed class VendorDirectoryService(NpgsqlDataSource dataSource, Purchasi
                 data.Envelope.DataLabel, data.Envelope.LastSuccessfulSync, data.Envelope.Currency, data.Envelope.CurrencyLabel,
                 data.Envelope.DiscountBasis, data.Envelope.Period, data.Envelope.PreviousPeriod, data.Envelope.Filters,
                 data.Envelope.Unavailable, data.Page, filter.PageSize, data.TotalRows, filter.Sort, Dir(filter),
-                data.Totals, data.PreviousTotals, data.Rows);
+                data.Totals, data.PreviousTotals, data.Rows,
+                data.Envelope.DataQuality);
         });
 
     /// <summary>The directory print twin: the same rows in the current sort, at most 1,000 (research R9).</summary>
@@ -106,7 +108,8 @@ public sealed class VendorDirectoryService(NpgsqlDataSource dataSource, Purchasi
                 data.Envelope.DataLabel, data.Envelope.LastSuccessfulSync, data.Envelope.Currency, data.Envelope.CurrencyLabel,
                 data.Envelope.DiscountBasis, data.Envelope.Period, data.Envelope.PreviousPeriod, data.Envelope.Filters,
                 data.Envelope.Unavailable, shaped.TotalRows, shaped.Truncated, shaped.Limit, data.Totals, data.PreviousTotals,
-                shaped.Rows);
+                shaped.Rows,
+                data.Envelope.DataQuality);
         });
 
     /// <summary>
@@ -384,7 +387,8 @@ LIMIT @limit::int OFFSET @offset::int";
             trend,
             topProducts,
             returns,
-            documents);
+            documents,
+            envelope.DataQuality);
     }
 
     /// <summary>12 months ending with the period's last month; a month before the first synced month is not available.</summary>

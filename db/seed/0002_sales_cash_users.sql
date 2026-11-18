@@ -119,6 +119,6 @@ FROM generate_series(1, 56) AS s;
 -- Final PBKDF2-HMAC-SHA256 hash strings (100000 iterations, base64 salt and hash).
 -- manager: manager123
 -- admin: admin123
-INSERT INTO app_user (user_id, username, password_hash, role, is_active) VALUES
-(1, 'manager', 'pbkdf2-sha256$100000$WmhhcmZhTWFuYWdlclNhbHQ=$qDo2DRXwIxpj1TkwTRfWGNdvjjOPvpb9EyqPAEG7xgM=', 'manager', true),
-(2, 'admin', 'pbkdf2-sha256$100000$WmhhcmZhQWRtaW5TYWx0MDE=$K7MXh4JtGn+NlEHffa5n3nnjvKTtOgPRlpHn0fcHyUk=', 'admin', true);
+INSERT INTO app_user (user_id, username, username_key, password_hash, role, is_active) VALUES
+(1, 'manager', 'manager', 'pbkdf2-sha256$100000$WmhhcmZhTWFuYWdlclNhbHQ=$qDo2DRXwIxpj1TkwTRfWGNdvjjOPvpb9EyqPAEG7xgM=', 'management', true),
+(2, 'admin', 'admin', 'pbkdf2-sha256$100000$WmhhcmZhQWRtaW5TYWx0MDE=$K7MXh4JtGn+NlEHffa5n3nnjvKTtOgPRlpHn0fcHyUk=', 'admin', true);
