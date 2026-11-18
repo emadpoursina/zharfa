@@ -125,6 +125,10 @@ builder.Services.AddPurchasingSync(builder.Configuration, builder.Environment, d
 builder.Services.AddSingleton<PurchasingReconciliation>();
 // Overview (spec 003, US5): server-side purchasing figures for Manager and Admin (contracts/api.md §3).
 builder.Services.AddScoped<PurchasingOverviewService>();
+// Purchasing reports (spec 004): report engine, vendor directory and profile, vendor comparison (contracts/api.md).
+builder.Services.AddScoped<Zharfa.Api.Purchasing.Reports.PurchasingReportService>();
+builder.Services.AddScoped<Zharfa.Api.Purchasing.Reports.VendorDirectoryService>();
+builder.Services.AddScoped<Zharfa.Api.Purchasing.Reports.VendorComparisonService>();
 
 builder.Services.AddHttpClient("ai", client =>
 {

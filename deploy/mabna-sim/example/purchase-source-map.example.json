@@ -14,6 +14,7 @@
       "key": { "column": "VendorID", "status": "candidate" },
       "name": { "column": "VendorName", "status": "candidate" },
       "active": { "column": null, "status": "unknown" },
+      "code": { "column": "SimVendorCode", "status": "candidate" },
       "change": { "strategy": "full" }
     },
     "product": {
@@ -23,6 +24,16 @@
       "status": "candidate",
       "key": { "column": "ProductID", "status": "candidate" },
       "name": { "column": "ProductName", "status": "candidate" },
+      "categoryKey": { "column": "SimDrugGroupID", "status": "candidate" },
+      "change": { "strategy": "full" }
+    },
+    "productCategory": {
+      "object": "dbo.SimDrugGroup",
+      "kind": "table",
+      "hostFiltered": false,
+      "status": "candidate",
+      "key": { "column": "DrugGroupID", "status": "candidate" },
+      "name": { "column": "DrugGroupName", "status": "candidate" },
       "change": { "strategy": "full" }
     },
     "purchaseInvoice": {

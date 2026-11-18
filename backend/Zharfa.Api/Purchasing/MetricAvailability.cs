@@ -26,12 +26,21 @@ public static class MetricAvailability
     public const string FigureTopProducts = "topProducts";
     public const string FigureTrend = "trend";
     public const string FigureComparison = "comparison";
+    public const string FigureVendorCode = "vendorCode";
+    public const string FigureCategory = "category";
+    public const string FigureQuantity = "quantity";
+    public const string FigureVendorReport = "vendorReport";
+    public const string FigureProductReport = "productReport";
+    public const string FigureReturnsReport = "returnsReport";
+    public const string FigureTransactions = "transactions";
 
     private static readonly string[] AllFigures =
     {
         FigureNet, FigureGross, FigureReturns, FigureVat,
         FigureActiveVendors, FigureTopVendors, FigureTopProducts,
-        FigureTrend, FigureComparison
+        FigureTrend, FigureComparison,
+        FigureVendorCode, FigureCategory, FigureQuantity, FigureVendorReport,
+        FigureProductReport, FigureReturnsReport, FigureTransactions
     };
 
     /// <summary>
@@ -120,6 +129,24 @@ public static class MetricAvailability
         result[FigureTopProducts] = netReason ?? productKeyReason;
         result[FigureTrend] = netReason;
         result[FigureComparison] = netReason;
+
+        // Phase 2 figures (spec 004, contracts/source-map-delta.md availability table).
+        var topProductsReason = result[FigureTopProducts];
+        result[FigureVendorCode] = FieldReason(map?.Vendor?.Code, isProduction);
+        result[FigureCategory] = First(
+            topProductsReason,
+            FieldReason(map?.Product?.CategoryKey, isProduction),
+            EntityReason(map?.ProductCategory, isProduction),
+            FieldReason(map?.ProductCategory?.Key, isProduction),
+            FieldReason(map?.ProductCategory?.Name, isProduction));
+        result[FigureQuantity] = FieldReason(map?.PurchaseLine?.Quantity, isProduction);
+        result[FigureVendorReport] = result[FigureTopVendors];
+        result[FigureProductReport] = topProductsReason;
+        result[FigureReturnsReport] = First(
+            returnReason,
+            FieldReason(map?.PurchaseReturn?.VendorKey, isProduction),
+            productKeyReason);
+        result[FigureTransactions] = netReason;
 
         return result;
     }

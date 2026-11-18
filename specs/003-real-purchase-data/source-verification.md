@@ -51,6 +51,13 @@ Verified date: Jalali `yyyy/mm/dd`, filled in when the item is checked on-site.
 | 37 | Purchase invoice header: table (object, operation filter and entity status) | candidate | | Entity `purchaseInvoice` in the candidate map; filter and object verified together on-site |
 | 38 | Purchase return header: table (object, operation filter and entity status) | candidate | | Entity `purchaseReturn` in the candidate map; must not share an object with the invoice header under identical filters (map rule 6) |
 | 39 | Purchase line: table (object and entity status) | candidate | | Entity `purchaseLine` in the candidate map; read in full on every run |
+| 40 | Vendor code shown to users (column) | candidate | | Phase 2 (spec 004). Optional: without it the vendor code and code search are unavailable; map field `vendor.code` |
+| 41 | Product drug group key (column) | candidate | | Phase 2 (spec 004). Optional: without it the by-category report is unavailable; map field `product.categoryKey` |
+| 42 | Drug group master: table (object and entity status) | candidate | | Phase 2 (spec 004). Entity `productCategory`; joins the live allowlist only once confirmed or corrected |
+| 43 | Drug group master: key (column) | candidate | | Phase 2 (spec 004). Must match the product's drug group key exactly after normalization |
+| 44 | Drug group master: name (column) | candidate | | Phase 2 (spec 004). Shown in reports and filters |
+| 45 | Drug group master: change marker | candidate | | Phase 2 (spec 004). Strategy `full` in the candidate map; read in full with a key diff on every run |
+| 46 | Drug class second level | unknown | | Phase 2 (spec 004). Not built in Phase 2; recorded only so that a later release can verify it |
 
 ## On-site reconciliation
 

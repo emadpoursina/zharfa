@@ -104,6 +104,9 @@ public static class LogicalTables
     public const string Return = "purchase_return";
     public const string Line = "purchase_line";
 
+    /// <summary>Phase 2, optional drug group master. Not in <see cref="SyncOrder"/>: installs without it stay complete.</summary>
+    public const string ProductCategory = "product_category";
+
     public static readonly IReadOnlyList<string> SyncOrder = [Vendor, Product, Invoice, Return, Line];
 }
 

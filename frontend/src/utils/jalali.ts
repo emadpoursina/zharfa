@@ -291,3 +291,70 @@ export function jalaliMonthKeyLabel(key: string): string {
   }
   return `${JALALI_MONTH_NAMES[jm - 1]} ${toPersianDigits(match[1])}`;
 }
+
+export const JALALI_QUARTER_NAMES = ['فصل اول', 'فصل دوم', 'فصل سوم', 'فصل چهارم'];
+
+function pad2(value: number): string {
+  return String(value).padStart(2, '0');
+}
+
+/** Jalali quarter (1..4) of a month number (1..12). */
+export function jalaliQuarterOf(month: number): number {
+  return Math.floor((month - 1) / 3) + 1;
+}
+
+/** Quarter key «YYYY-Qn» of a Jalali month key «YYYY-MM» (Latin or Persian digits); null when invalid. */
+export function quarterKeyOfMonth(monthKey: string): string | null {
+  const match = /^(\d{4})-(\d{1,2})$/.exec(toLatinDigits(monthKey.trim()));
+  if (!match) {
+    return null;
+  }
+  const jm = parseInt(match[2], 10);
+  if (jm < 1 || jm > 12) {
+    return null;
+  }
+  return `${match[1]}-Q${jalaliQuarterOf(jm)}`;
+}
+
+/** Quarter key «YYYY-Qn» of the server's Jalali today «YYYY-MM-DD» (sync time zone). */
+export function currentQuarterKey(serverToday: string): string {
+  const monthKey = toLatinDigits(serverToday).slice(0, 7);
+  return quarterKeyOfMonth(monthKey) ?? `${monthKey.slice(0, 4)}-Q1`;
+}
+
+/** Persian label for a quarter key «YYYY-Qn», for example «1405-Q3» → «فصل سوم ۱۴۰۵». Returns the key when invalid. */
+export function jalaliQuarterKeyLabel(key: string): string {
+  const match = /^(\d{4})-Q([1-4])$/i.exec(toLatinDigits(key.trim()));
+  if (!match) {
+    return key;
+  }
+  return `${JALALI_QUARTER_NAMES[Number(match[2]) - 1]} ${toPersianDigits(match[1])}`;
+}
+
+/** Persian label for a Jalali year «سال ۱۴۰۵». */
+export function jalaliYearLabel(year: string): string {
+  return `سال ${toPersianDigits(toLatinDigits(year.trim()))}`;
+}
+
+/** Year key «YYYY» of the server's Jalali today «YYYY-MM-DD». */
+export function currentYearKey(serverToday: string): string {
+  return toLatinDigits(serverToday).slice(0, 4);
+}
+
+/**
+ * Latin «YYYY-MM-DD» key of a Jalali day typed with Persian, Arabic-Indic or Latin digits and «/» or «-»
+ * separators («۱۴۰۵/۰۸/۰۹» → «1405-08-09»). Null when the day is not a valid Jalali date; the server validates the
+ * range again and answers with its own Persian message.
+ */
+export function jalaliDayKey(input: string): string | null {
+  const parts = parseJalaliInput(input);
+  if (!parts) {
+    return null;
+  }
+  return `${parts.jy}-${pad2(parts.jm)}-${pad2(parts.jd)}`;
+}
+
+/** The Jalali «YYYY-MM» key of a Jalali day key «YYYY-MM-DD» (Latin digits). */
+export function monthKeyOfDay(dayKey: string): string {
+  return toLatinDigits(dayKey).slice(0, 7);
+}

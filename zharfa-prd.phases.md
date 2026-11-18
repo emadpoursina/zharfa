@@ -41,7 +41,7 @@
 - [ ] Period comparison shows the previous period of equal length
 - [ ] Browser-print of a report yields a readable Persian RTL page stating period and filters
 **Out of scope:** Vendor balance on the profile (Phase 6), role-specific visibility (Phase 3), export and saved reports (Phase 5).
-**Spec:** none
+**Spec:** specs/004-vendor-purchasing-reports
 
 ## Phase 3: Permissions, audit, and data quality
 

@@ -50,11 +50,18 @@ public sealed class SyncRunner(NpgsqlDataSource dataSource, IMabnaReader reader)
             var states = await LoadStatesAsync(connection, tx, cancellationToken);
             var run = new RunState(connection, tx, request, mapping, mapper, pager, states);
 
-            completed.Add(await SyncMastersAsync(run, LogicalTables.Vendor, mapping.Vendor, isVendor: true, cancellationToken));
+            completed.Add(await SyncMastersAsync(run, LogicalTables.Vendor, mapping.Vendor, MasterKind.Vendor, cancellationToken));
             AfterTable(request, completed);
 
-            completed.Add(await SyncMastersAsync(run, LogicalTables.Product, mapping.Product, isVendor: false, cancellationToken));
+            completed.Add(await SyncMastersAsync(run, LogicalTables.Product, mapping.Product, MasterKind.Product, cancellationToken));
             AfterTable(request, completed);
+
+            // Phase 2, optional: the drug group master is synced only when its object is mapped and usable.
+            if (mapping.ProductCategory is { } categorySource)
+            {
+                completed.Add(await SyncMastersAsync(run, LogicalTables.ProductCategory, categorySource, MasterKind.ProductCategory, cancellationToken));
+                AfterTable(request, completed);
+            }
 
             completed.Add(await SyncDocumentsAsync(run, LogicalTables.Invoice, mapping.Invoice, "invoice", cancellationToken));
             AfterTable(request, completed);
@@ -112,11 +119,18 @@ public sealed class SyncRunner(NpgsqlDataSource dataSource, IMabnaReader reader)
 
     // ---------------------------------------------------------------- masters
 
+    private enum MasterKind
+    {
+        Vendor,
+        Product,
+        ProductCategory,
+    }
+
     private async Task<SyncTableCounts> SyncMastersAsync(
         RunState run,
         string table,
         MasterSource source,
-        bool isVendor,
+        MasterKind kind,
         CancellationToken cancellationToken)
     {
         // Masters are read in full on every run with a key diff, whatever change marker the map gives
@@ -133,7 +147,12 @@ public sealed class SyncRunner(NpgsqlDataSource dataSource, IMabnaReader reader)
             foreach (var row in page)
             {
                 counters.Read++;
-                var mapped = isVendor ? run.Mapper.MapVendor(row) : run.Mapper.MapProduct(row);
+                var mapped = kind switch
+                {
+                    MasterKind.Vendor => run.Mapper.MapVendor(row),
+                    MasterKind.Product => run.Mapper.MapProduct(row),
+                    _ => run.Mapper.MapProductCategory(row),
+                };
                 if (mapped.RejectReason is not null)
                 {
                     counters.Reject(mapped.RejectReason, PurchaseRowMapper.KeyText(row.Get(source.Key)));
@@ -148,17 +167,23 @@ public sealed class SyncRunner(NpgsqlDataSource dataSource, IMabnaReader reader)
                 continue;
             }
 
-            var (inserted, updated) = await UpsertMastersAsync(run, isVendor, batch.Values.ToList(), cancellationToken);
+            var (inserted, updated) = await UpsertMastersAsync(run, kind, batch.Values.ToList(), cancellationToken);
             counters.Inserted += inserted;
             counters.Updated += updated;
-            await StageKeysAsync(run, isVendor ? StageVendorSql : StageProductSql, batch.Keys.ToArray(), cancellationToken);
+            var stageSql = kind switch
+            {
+                MasterKind.Vendor => StageVendorSql,
+                MasterKind.Product => StageProductSql,
+                _ => StageCategorySql,
+            };
+            await StageKeysAsync(run, stageSql, batch.Keys.ToArray(), cancellationToken);
         }
 
         counters.EnsureWithinRejectLimit(run.Request.MaxRejectedRows);
 
         if (plan.DeleteScope == DeleteScope.AllUnseen)
         {
-            counters.Deleted = await DeleteUnseenMastersAsync(run, isVendor, cancellationToken);
+            counters.Deleted = await DeleteUnseenMastersAsync(run, kind, cancellationToken);
         }
 
         await SaveStateAsync(run, table, new ChangeMarker(ChangeStrategy.Full, null), null, fullRead: true, state, cancellationToken);
@@ -167,7 +192,7 @@ public sealed class SyncRunner(NpgsqlDataSource dataSource, IMabnaReader reader)
 
     private static async Task<(int Inserted, int Updated)> UpsertMastersAsync(
         RunState run,
-        bool isVendor,
+        MasterKind kind,
         IReadOnlyList<MasterRecord> records,
         CancellationToken cancellationToken)
     {
@@ -175,18 +200,26 @@ public sealed class SyncRunner(NpgsqlDataSource dataSource, IMabnaReader reader)
         var names = records.Select(r => r.NameFa).ToArray();
 
         NpgsqlCommand cmd;
-        if (isVendor)
+        switch (kind)
         {
-            cmd = Cmd(run.Connection, run.Tx, UpsertVendorSql);
-            cmd.Parameters.AddWithValue("keys", keys);
-            cmd.Parameters.AddWithValue("names", names);
-            cmd.Parameters.AddWithValue("actives", records.Select(r => r.IsActiveSource is null ? null : (r.IsActiveSource.Value ? "true" : "false")).ToArray());
-        }
-        else
-        {
-            cmd = Cmd(run.Connection, run.Tx, UpsertProductSql);
-            cmd.Parameters.AddWithValue("keys", keys);
-            cmd.Parameters.AddWithValue("names", names);
+            case MasterKind.Vendor:
+                cmd = Cmd(run.Connection, run.Tx, UpsertVendorSql);
+                cmd.Parameters.AddWithValue("keys", keys);
+                cmd.Parameters.AddWithValue("names", names);
+                cmd.Parameters.AddWithValue("actives", records.Select(r => r.IsActiveSource is null ? null : (r.IsActiveSource.Value ? "true" : "false")).ToArray());
+                cmd.Parameters.AddWithValue("codes", records.Select(r => r.Code).ToArray());
+                break;
+            case MasterKind.Product:
+                cmd = Cmd(run.Connection, run.Tx, UpsertProductSql);
+                cmd.Parameters.AddWithValue("keys", keys);
+                cmd.Parameters.AddWithValue("names", names);
+                cmd.Parameters.AddWithValue("groups", records.Select(r => r.CategoryKey).ToArray());
+                break;
+            default:
+                cmd = Cmd(run.Connection, run.Tx, UpsertCategorySql);
+                cmd.Parameters.AddWithValue("keys", keys);
+                cmd.Parameters.AddWithValue("names", names);
+                break;
         }
 
         cmd.Parameters.AddWithValue("synced_at", run.Request.StartedAt);
@@ -196,14 +229,21 @@ public sealed class SyncRunner(NpgsqlDataSource dataSource, IMabnaReader reader)
         }
     }
 
-    private static async Task<int> DeleteUnseenMastersAsync(RunState run, bool isVendor, CancellationToken cancellationToken)
+    private static async Task<int> DeleteUnseenMastersAsync(RunState run, MasterKind kind, CancellationToken cancellationToken)
     {
-        if (isVendor)
+        if (kind == MasterKind.Vendor)
         {
             await using var detach = Cmd(run.Connection, run.Tx, DetachVendorSql);
             await detach.ExecuteNonQueryAsync(cancellationToken);
             await using var delete = Cmd(run.Connection, run.Tx, DeleteVendorSql);
             return Convert.ToInt32(await delete.ExecuteScalarAsync(cancellationToken));
+        }
+
+        if (kind == MasterKind.ProductCategory)
+        {
+            // Product rows keep their drug_group_key text; a deleted category falls into the unknown bucket.
+            await using var deleteCategory = Cmd(run.Connection, run.Tx, DeleteCategorySql);
+            return Convert.ToInt32(await deleteCategory.ExecuteScalarAsync(cancellationToken));
         }
 
         await using var detachProduct = Cmd(run.Connection, run.Tx, DetachProductSql);
@@ -822,6 +862,7 @@ public sealed class SyncRunner(NpgsqlDataSource dataSource, IMabnaReader reader)
     private const string StageTablesSql = """
         CREATE TEMP TABLE stage_vendor (source_key text PRIMARY KEY) ON COMMIT DROP;
         CREATE TEMP TABLE stage_product (source_key text PRIMARY KEY) ON COMMIT DROP;
+        CREATE TEMP TABLE stage_category (source_key text PRIMARY KEY) ON COMMIT DROP;
         CREATE TEMP TABLE stage_document (doc_type text NOT NULL, source_key text NOT NULL, PRIMARY KEY (doc_type, source_key)) ON COMMIT DROP;
         CREATE TEMP TABLE stage_line (document_id bigint NOT NULL, source_key text NOT NULL, PRIMARY KEY (document_id, source_key)) ON COMMIT DROP;
         """;
@@ -832,6 +873,9 @@ public sealed class SyncRunner(NpgsqlDataSource dataSource, IMabnaReader reader)
     private const string StageProductSql =
         "INSERT INTO stage_product (source_key) SELECT k FROM unnest(@keys::text[]) AS x(k) ON CONFLICT DO NOTHING";
 
+    private const string StageCategorySql =
+        "INSERT INTO stage_category (source_key) SELECT k FROM unnest(@keys::text[]) AS x(k) ON CONFLICT DO NOTHING";
+
     private const string StageDocumentSql =
         "INSERT INTO stage_document (doc_type, source_key) SELECT t, k FROM unnest(@types::text[], @keys::text[]) AS x(t, k) ON CONFLICT DO NOTHING";
 
@@ -840,15 +884,16 @@ public sealed class SyncRunner(NpgsqlDataSource dataSource, IMabnaReader reader)
 
     private const string UpsertVendorSql = """
         WITH up AS (
-            INSERT INTO mabna.vendor (source_key, name_fa, is_active_source, synced_at)
-            SELECT k, n, NULLIF(a, '')::boolean, @synced_at
-            FROM unnest(@keys::text[], @names::text[], @actives::text[]) AS x(k, n, a)
+            INSERT INTO mabna.vendor (source_key, name_fa, is_active_source, code, synced_at)
+            SELECT k, n, NULLIF(a, '')::boolean, NULLIF(c, ''), @synced_at
+            FROM unnest(@keys::text[], @names::text[], @actives::text[], @codes::text[]) AS x(k, n, a, c)
             ON CONFLICT (source_key) DO UPDATE
                 SET name_fa = EXCLUDED.name_fa,
                     is_active_source = EXCLUDED.is_active_source,
+                    code = EXCLUDED.code,
                     synced_at = EXCLUDED.synced_at
-                WHERE (mabna.vendor.name_fa, mabna.vendor.is_active_source)
-                      IS DISTINCT FROM (EXCLUDED.name_fa, EXCLUDED.is_active_source)
+                WHERE (mabna.vendor.name_fa, mabna.vendor.is_active_source, mabna.vendor.code)
+                      IS DISTINCT FROM (EXCLUDED.name_fa, EXCLUDED.is_active_source, EXCLUDED.code)
             RETURNING (xmax = 0) AS inserted
         )
         SELECT count(*) FILTER (WHERE inserted), count(*) FILTER (WHERE NOT inserted) FROM up
@@ -856,16 +901,40 @@ public sealed class SyncRunner(NpgsqlDataSource dataSource, IMabnaReader reader)
 
     private const string UpsertProductSql = """
         WITH up AS (
-            INSERT INTO mabna.product (source_key, name_fa, synced_at)
+            INSERT INTO mabna.product (source_key, name_fa, drug_group_key, synced_at)
+            SELECT k, n, NULLIF(g, ''), @synced_at
+            FROM unnest(@keys::text[], @names::text[], @groups::text[]) AS x(k, n, g)
+            ON CONFLICT (source_key) DO UPDATE
+                SET name_fa = EXCLUDED.name_fa,
+                    drug_group_key = EXCLUDED.drug_group_key,
+                    synced_at = EXCLUDED.synced_at
+                WHERE (mabna.product.name_fa, mabna.product.drug_group_key)
+                      IS DISTINCT FROM (EXCLUDED.name_fa, EXCLUDED.drug_group_key)
+            RETURNING (xmax = 0) AS inserted
+        )
+        SELECT count(*) FILTER (WHERE inserted), count(*) FILTER (WHERE NOT inserted) FROM up
+        """;
+
+    private const string UpsertCategorySql = """
+        WITH up AS (
+            INSERT INTO mabna.product_category (source_key, name_fa, synced_at)
             SELECT k, n, @synced_at
             FROM unnest(@keys::text[], @names::text[]) AS x(k, n)
             ON CONFLICT (source_key) DO UPDATE
                 SET name_fa = EXCLUDED.name_fa,
                     synced_at = EXCLUDED.synced_at
-                WHERE mabna.product.name_fa IS DISTINCT FROM EXCLUDED.name_fa
+                WHERE mabna.product_category.name_fa IS DISTINCT FROM EXCLUDED.name_fa
             RETURNING (xmax = 0) AS inserted
         )
         SELECT count(*) FILTER (WHERE inserted), count(*) FILTER (WHERE NOT inserted) FROM up
+        """;
+
+    private const string DeleteCategorySql = """
+        WITH gone AS (
+            DELETE FROM mabna.product_category c
+            WHERE NOT EXISTS (SELECT 1 FROM stage_category s WHERE s.source_key = c.source_key)
+            RETURNING 1)
+        SELECT count(*) FROM gone
         """;
 
     private const string DetachVendorSql = """

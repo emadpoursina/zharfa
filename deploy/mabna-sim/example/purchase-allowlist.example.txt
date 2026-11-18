@@ -4,3 +4,4 @@ dbo.SimProduct
 dbo.SimInvDoc
 dbo.SimRetDoc
 dbo.SimInvDocItem
+dbo.SimDrugGroup

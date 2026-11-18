@@ -41,6 +41,7 @@ const STATUS_STYLES: Record<SyncJob['status'], string> = {
 const TABLE_LABELS: Record<string, string> = {
   vendor: 'تأمین‌کنندگان',
   product: 'کالاها',
+  product_category: 'گروه‌های دارویی',
   purchase_invoice: 'فاکتورهای خرید',
   purchase_return: 'برگشت از خرید',
   purchase_line: 'ردیف‌های خرید',

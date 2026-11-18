@@ -30,6 +30,16 @@ body {
   display: none;
 }
 
+.print-only {
+  display: none;
+}
+
+/* Named landscape page for wide reports (transactions); A4 portrait is the default (spec 004 T069). */
+@page report-landscape {
+  size: A4 landscape;
+  margin: 10mm;
+}
+
 /* Browser-print styling for Persian RTL report (T027 / FR-014 / US6 AC3) */
 @media print {
   @page {
@@ -155,6 +165,48 @@ body {
   .border-gray-200,
   .border-gray-300 {
     border-color: #9ca3af !important;
+  }
+
+  /* Report printing (spec 004 T069): only the report's print container is printed; the navigation, the filter bar,
+     the screen table and the chart are hidden. The container starts at the top of the page, RTL, full width. */
+  .print-only {
+    display: block !important;
+  }
+
+  body * {
+    visibility: hidden !important;
+  }
+
+  .report-print,
+  .report-print * {
+    visibility: visible !important;
+  }
+
+  .report-print {
+    position: absolute !important;
+    top: 0 !important;
+    right: 0 !important;
+    left: 0 !important;
+    width: 100% !important;
+    direction: rtl !important;
+  }
+
+  .report-print table {
+    table-layout: fixed !important;
+  }
+
+  .report-print th,
+  .report-print td {
+    overflow-wrap: anywhere !important;
+    word-break: normal !important;
+  }
+
+  .report-print.print-landscape {
+    page: report-landscape;
+  }
+
+  .report-print.print-landscape table {
+    font-size: 9pt !important;
   }
 }
 

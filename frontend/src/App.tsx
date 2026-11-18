@@ -5,6 +5,9 @@ import { LastSyncIndicator } from './components/LastSyncIndicator';
 import { DataSync } from './pages/DataSync';
 import { Dashboard } from './pages/Dashboard';
 import { OverviewPurchasing } from './pages/OverviewPurchasing';
+import { PurchasingReports } from './pages/PurchasingReports';
+import { VendorComparison } from './pages/VendorComparison';
+import { Vendors, type VendorTarget } from './pages/Vendors';
 import { Login } from './pages/Login';
 import {
   apiGet,
@@ -20,7 +23,7 @@ interface UserInfo {
   role: string;
 }
 
-type ViewId = 'overview' | 'dataSync' | 'demo';
+type ViewId = 'overview' | 'vendors' | 'reports' | 'compare' | 'dataSync' | 'demo';
 
 /**
  * Views of the shell (no router). Which views exist is decided by the server in
@@ -32,16 +35,30 @@ const VIEW_TABS: ReadonlyArray<{
   isVisible: (modules: SystemModules) => boolean;
 }> = [
   { id: 'overview', label: 'نمای کلی خرید', isVisible: (modules) => modules.overview },
+  { id: 'vendors', label: 'تأمین‌کنندگان', isVisible: (modules) => modules.purchasingReports },
+  { id: 'reports', label: 'گزارش‌های خرید', isVisible: (modules) => modules.purchasingReports },
+  { id: 'compare', label: 'مقایسه تأمین‌کنندگان', isVisible: (modules) => modules.purchasingReports },
   { id: 'dataSync', label: 'تنظیمات ← همگام‌سازی داده', isVisible: (modules) => modules.dataSync },
   { id: 'demo', label: 'صفحات نمایشی', isVisible: (modules) => modules.demoPages },
 ];
 
 type ViewTab = (typeof VIEW_TABS)[number];
 
-function renderView(id: ViewId, status: SystemStatus) {
+interface ViewContext {
+  vendorTarget: VendorTarget | null;
+  openVendor: (vendor: { key: string; name: string }, month: string) => void;
+}
+
+function renderView(id: ViewId, status: SystemStatus, context: ViewContext) {
   switch (id) {
     case 'overview':
-      return <OverviewPurchasing serverJalaliToday={status.serverJalaliToday} />;
+      return <OverviewPurchasing serverJalaliToday={status.serverJalaliToday} onOpenVendor={context.openVendor} />;
+    case 'vendors':
+      return <Vendors serverToday={status.serverJalaliToday} target={context.vendorTarget} />;
+    case 'reports':
+      return <PurchasingReports serverToday={status.serverJalaliToday} />;
+    case 'compare':
+      return <VendorComparison serverToday={status.serverJalaliToday} />;
     case 'dataSync':
       return <DataSync />;
     case 'demo':
@@ -57,8 +74,15 @@ function App() {
   const [status, setStatus] = useState<SystemStatus | null>(null);
   const [statusFailed, setStatusFailed] = useState(false);
   const [requestedView, setRequestedView] = useState<ViewId>('overview');
+  const [vendorTarget, setVendorTarget] = useState<VendorTarget | null>(null);
 
   const isSignedIn = user !== null;
+
+  // Overview → vendor profile: opens the Vendors view on that vendor for the Overview's month.
+  const openVendor = (vendor: { key: string; name: string }, month: string) => {
+    setVendorTarget({ vendor, month });
+    setRequestedView('vendors');
+  };
 
   useEffect(() => {
     let active = true;
@@ -127,6 +151,7 @@ function App() {
       setStatus(null);
       setStatusFailed(false);
       setRequestedView('overview');
+      setVendorTarget(null);
       setLoggingOut(false);
     }
   };
@@ -226,7 +251,7 @@ function App() {
                   })}
                 </nav>
 
-                {currentTab && renderView(currentTab.id, status)}
+                {currentTab && renderView(currentTab.id, status, { vendorTarget, openVendor })}
               </>
             )}
           </main>
