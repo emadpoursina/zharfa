@@ -6,290 +6,324 @@ using System.Diagnostics;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
+using System.Text.Json.Serialization;
 using Microsoft.AspNetCore.Authorization;
-using Zharfa.Api.Security;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Logging;
 using Zharfa.Api.Ai;
-using Zharfa.Api.Analytics;
+using Zharfa.Api.Audit;
 using Zharfa.Api.Data;
 using Zharfa.Api.Platform;
+using Zharfa.Api.Purchasing.Reports;
+using Zharfa.Api.Security;
 
-/// <summary>
-/// Labels every AI answer payload carries (FR-022, contracts/api.md §5). The AI agent is demo-only
-/// (<see cref="DemoOnlyAttribute"/>) until Phase 4, so these values are always the demo ones.
-/// </summary>
-public static class AiDataLabel
-{
-    public const string DataLabel = "demo";
+public record PurchasingChatRequest(string? Question);
 
-    public const string Notice =
-        "این پاسخ فقط بر اساس داده‌های نمایشی (دمو) تولید شده و هیچ داده واقعی شرکت در آن استفاده نشده است.";
-}
+public record PurchasingPeriodDto(string From, string To, string JalaliLabel, string? Month = null);
 
-public record AiChatRequest(
-    string? Question,
-    string? From,
-    string? To,
-    long? CategoryId);
+public record PurchasingFiltersDto(string? Vendor = null, string? Product = null, string? Category = null);
 
-public record AiChatResponse(
-    bool DemoData,
+public record PurchasingChatResponse(
     string Answer,
-    PeriodDto Period,
-    FiltersDto Filters,
+    PurchasingPeriodDto Period,
+    PurchasingFiltersDto Filters,
     string? View,
     IReadOnlyList<string> Facts,
     string Interpretation,
     bool Unavailable,
-    string DataLabel = AiDataLabel.DataLabel,
-    string DemoNotice = AiDataLabel.Notice);
+    string DataLabel,
+    string? DemoNotice = null);
 
-public record AiChatUnavailableResponse(
-    bool DemoData,
+public record PurchasingChatUnavailableResponse(
     bool Unavailable,
     string Answer,
     string Message,
-    PeriodDto Period,
-    FiltersDto Filters,
+    PurchasingPeriodDto? Period,
+    PurchasingFiltersDto? Filters,
     IReadOnlyList<string> Facts,
     string Interpretation,
     string? View,
-    string DataLabel = AiDataLabel.DataLabel,
-    string DemoNotice = AiDataLabel.Notice);
+    string DataLabel,
+    string? DemoNotice = null,
+    [property: JsonPropertyName("code")] string Code = "assistant-unavailable");
 
 [ApiController]
 [Route("api/ai")]
 [Authorize(Policy = Permissions.AiQuery)]
-[DemoOnly]
-public class AiController : ControllerBase
+public class AiController(
+    IAiProvider aiProvider,
+    PurchasingAnalystTools analystTools,
+    AiQuestionGate questionGate,
+    IAuditLogger auditLogger,
+    DataModeOptions dataMode,
+    ILogger<AiController> logger) : ControllerBase
 {
-    private const string SystemPrompt =
-        "شما تحلیل‌گر ارشد کسب‌وکار در شرکت پخش دارویی «ژرفا» هستید.\n" +
-        "قوانین الزامی شما:\n" +
-        "۱. پاسخ را فقط و فقط به زبان فارسی روان ارائه دهید.\n" +
-        "۲. صرفاً از داده‌ها و ارقام بازگردانده شده توسط ابزارهای تاییدشده استفاده کنید؛ هرگز رقمی از خود نسازید یا حدس نزنید.\n" +
-        "۳. حقایق قطعی استخراج‌شده از داده‌ها را از تحلیل و تفسیر کسب‌وکاری تفکیک کنید.\n" +
-        "۴. همواره بازه زمانی، فیلترها و نام نمای مرجع (view) را در پاسخ خود ذکر نمایید.\n" +
-        "۵. در صورتی که داده‌ای برای سوال کاربر وجود نداشت یا ابزاری داده‌ای نیافت، صریحاً اعلام کنید: «داده در دسترس نیست».\n" +
-        "۶. قلمرو پاسخ‌گویی شما تنها به سه مجموعه شاخص فروش (sales_overview)، مطالبات و دریافتی‌ها (receivables)، و هشدارهای موجودی انبار (inventory_alerts) محدود است.";
+    private const string PurchasingSystemPrompt =
+        "شما تحلیل‌گر هوشمند خرید در شرکت پخش دارویی «ژرفا» هستید.\n" +
+        "قوانین الزامی و قطعی شما:\n" +
+        "۱. پاسخ را منحصراً به زبان فارسی روان، محترمانه و دقیق ارائه دهید.\n" +
+        "۲. ارقام و حقایق را صرفاً از نتایج ابزارهای مجاز خرید استخراج کنید؛ هرگز رقمی از خود نسازید، تخمین نزنید یا حدس نزنید.\n" +
+        "۳. همواره دوره زمانی (مثلاً ماه یا فصل جلالی)، فیلترها و نام نمای مرجع (view) را در پاسخ خود ذکر نمایید.\n" +
+        "۴. حقایق قطعی استخراج‌شده از ابزارها را از تحلیل و تفسیر کسب‌وکاری تفکیک کنید. در متن تفسیر هیچ عدد یا رقمی که در حقایق نیامده اضافه نکنید.\n" +
+        "۵. در صورتی که داده‌ای یافت نشد، منبع در دسترس نبود یا سوال خارج از قلمرو خرید بود، صریحاً پاسخ دهید: «داده در دسترس نیست».\n" +
+        "۶. اگر برای یک دوره زمانی معتبر خریدی ثبت نشده بود، مبلغ آن صفر است (نه داده در دسترس نیست).\n" +
+        "۷. فرمول‌های مالی را کاملاً تفکیک کنید: خرید، پرداخت و مانده حساب تأمین‌کننده سه مفهوم متفاوتند. هرگز تفاوت قیمت را به عنوان سود معرفی نکنید.\n" +
+        "۸. از جداول، نمودارها یا کدهای ساختگی استفاده نکنید.\n" +
+        "۹. قلمرو پاسخ‌گویی شما منحصراً ابزارهای تحلیل خرید است و هیچ‌گونه دسترسی به مانده حساب، اسناد پرداختنی، چک‌ها یا فروش و انبار ندارید.\n" +
+        "۱۰. هرگز خالص خرید را به عنوان فروش داروخانه‌ها معرفی نکنید.";
 
-    private readonly IAiProvider _aiProvider;
-    private readonly AnalystTools _analystTools;
-    private readonly ILogger<AiController> _logger;
+    private const string DemoNoticeText =
+        "این پاسخ فقط بر اساس داده‌های نمایشی (دمو) تولید شده و هیچ داده واقعی شرکت در آن استفاده نشده است.";
 
-    public AiController(
-        IAiProvider aiProvider,
-        AnalystTools analystTools,
-        ILogger<AiController> logger)
+    private const string WaitMessage =
+        "لطفاً صبر کنید تا پاسخ پرسش فعلی آماده شود.";
+
+    private const string AssistantUnavailableAnswer =
+        "پاسخی ارائه نشد؛ دستیار هوشمند در حال حاضر در دسترس نیست.";
+
+    private IActionResult AssistantUnavailableResult(string message)
     {
-        _aiProvider = aiProvider;
-        _analystTools = analystTools;
-        _logger = logger;
+        return StatusCode(StatusCodes.Status503ServiceUnavailable, new PurchasingChatUnavailableResponse(
+            Unavailable: true,
+            Code: "assistant-unavailable",
+            Answer: AssistantUnavailableAnswer,
+            Message: message,
+            Period: null,
+            Filters: null,
+            Facts: Array.Empty<string>(),
+            Interpretation: string.Empty,
+            View: null,
+            DataLabel: dataMode.DataLabel,
+            DemoNotice: dataMode.IsDemo ? DemoNoticeText : null));
     }
 
+    // Phase 3 FR-018: Authentication (401) and Authorization (403 missing ai.query) are enforced
+    // by framework middleware and AuditingAuthorizationResultHandler. AiController does not catch
+    // or handle 401/403 directly. Audit failure must never change the HTTP outcome.
     [HttpPost("chat")]
     public async Task<IActionResult> Chat(
-        [FromBody] AiChatRequest? request,
+        [FromBody] PurchasingChatRequest? request,
         CancellationToken cancellationToken)
     {
-        if (request == null || string.IsNullOrWhiteSpace(request.Question) || request.Question.Trim().Length > 2000)
+        var rawQuestion = request?.Question?.Trim() ?? string.Empty;
+        if (string.IsNullOrWhiteSpace(rawQuestion) || rawQuestion.Length > 2000)
         {
             return BadRequest(new { message = "متن سوال الزامی است و حداکثر می‌تواند ۲۰۰۰ کاراکتر باشد." });
         }
 
-        if (request.CategoryId.HasValue && request.CategoryId.Value <= 0)
+        var userId = User.UserId();
+        if (userId.HasValue && !questionGate.TryEnter(userId.Value))
         {
-            return BadRequest(new { message = "شناسه دسته‌بندی باید عددی مثبت باشد." });
+            _ = RecordAuditSafeAsync(rawQuestion, "busy", Array.Empty<string>());
+            return Conflict(new { message = WaitMessage, code = "ai-busy" });
         }
-
-        DateRange range;
-        try
-        {
-            range = PeriodFilters.Resolve(request.From, request.To);
-        }
-        catch (ArgumentException ex)
-        {
-            return BadRequest(new { message = ex.Message });
-        }
-
-        var period = PeriodDto.Create(PeriodFilters.BuildPeriodInfo(range));
-        var filters = new FiltersDto(request.CategoryId);
-
-        if (!_aiProvider.IsConfigured)
-        {
-            _logger.LogWarning("AI provider is not configured");
-            return StatusCode(StatusCodes.Status503ServiceUnavailable, new AiChatUnavailableResponse(
-                DemoData: true,
-                Unavailable: true,
-                Answer: "پاسخی ارائه نشد؛ سرویس هوش مصنوعی در دسترس نیست.",
-                Message: "سرویس هوش مصنوعی پیکربندی نشده است.",
-                Period: period,
-                Filters: filters,
-                Facts: Array.Empty<string>(),
-                Interpretation: string.Empty,
-                View: null));
-        }
-
-        using var budgetCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-        budgetCts.CancelAfter(TimeSpan.FromSeconds(AnalystTools.WHOLE_TOOL_PHASE_BUDGET_SECONDS));
-
-        var contextInfo = $"بازه زمانی پیش‌فرض تحلیل: {period.JalaliLabel} (از {period.From} تا {period.To}). " +
-            (request.CategoryId.HasValue ? $"شناسه دسته‌بندی فیلتر شده: {request.CategoryId.Value}." : "بدون فیلتر دسته‌بندی خاص.");
-
-        var messages = new List<AiMessage>
-        {
-            new("system", SystemPrompt),
-            new("user", $"سوال کاربر: {request.Question.Trim()}\nاطلاعات زمینه: {contextInfo}")
-        };
-
-        var stopwatch = Stopwatch.StartNew();
-        var executedViews = new List<string>();
-        var executedFacts = new List<string>();
-        var executedToolNames = new List<string>();
-        int iterations = 0;
-        string? finalContent = null;
-        var toolSpecs = AnalystTools.GetToolSpecs();
 
         try
         {
-            while (iterations < AnalystTools.MAX_TOOL_CALLS_PER_CHAT)
+            using var budgetCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+            budgetCts.CancelAfter(TimeSpan.FromSeconds(PurchasingAnalystTools.WHOLE_ANSWER_BUDGET_SECONDS));
+
+            // 1. Answering provider configuration & liveness check (contracts/api.md §1)
+            try
             {
-                iterations++;
+                var isConfigured = aiProvider is ActiveAiProvider activeProvider
+                    ? await activeProvider.IsConfiguredAsync(budgetCts.Token)
+                    : aiProvider.IsConfigured;
 
-                // If tool budget reached, do not provide tool specs so model completes text
-                var activeSpecs = executedToolNames.Count >= AnalystTools.MAX_TOOL_CALLS_PER_CHAT
-                    ? Array.Empty<AiToolSpec>()
-                    : toolSpecs;
-
-                var turn = await _aiProvider.CompleteAsync(messages, activeSpecs, budgetCts.Token);
-                finalContent = turn.Content;
-
-                if (turn.ToolCalls == null || turn.ToolCalls.Count == 0)
+                if (!isConfigured)
                 {
-                    break;
+                    logger.LogWarning("Purchasing AI provider is not configured");
+                    _ = RecordAuditSafeAsync(rawQuestion, "provider", Array.Empty<string>());
+                    return AssistantUnavailableResult("سرویس هوش مصنوعی پیکربندی نشده است.");
                 }
 
-                messages.Add(new AiMessage("assistant", turn.Content, ToolCalls: turn.ToolCalls));
+                await aiProvider.ProbeLivenessAsync(budgetCts.Token);
+            }
+            catch (AiException ex)
+            {
+                logger.LogWarning("Purchasing AI liveness probe failed: {Message}", RedactionHelper.Scrub(ex.Message));
+                _ = RecordAuditSafeAsync(rawQuestion, "provider", Array.Empty<string>());
+                return AssistantUnavailableResult(RedactionHelper.Scrub(ex.Message));
+            }
+            catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
+            {
+                logger.LogWarning("Purchasing AI liveness probe timed out");
+                _ = RecordAuditSafeAsync(rawQuestion, "provider", Array.Empty<string>());
+                return AssistantUnavailableResult("پاسخ سرویس هوش مصنوعی به دلیل اتمام زمان مهلت دریافت نشد (timeout).");
+            }
+            catch (Exception ex)
+            {
+                logger.LogWarning("Purchasing AI liveness probe unexpected failure [{Type}]", ex.GetType().Name);
+                _ = RecordAuditSafeAsync(rawQuestion, "provider", Array.Empty<string>());
+                return AssistantUnavailableResult("خطا در برقراری ارتباط با سرویس هوش مصنوعی.");
+            }
 
-                foreach (var call in turn.ToolCalls)
+            // 2. Scope router gate (T087, research R21)
+            var hasSuccessfulSync = await analystTools.HasSuccessfulSyncAsync(budgetCts.Token);
+            var route = PurchasingQuestionRouter.Classify(rawQuestion, hasSuccessfulSync);
+
+            if (route.Scope != "purchasing")
+            {
+                // Metric-unavailable: 200 OK, empty facts, view=null, «داده در دسترس نیست»
+                // Tools are NEVER executed and CompleteAsync is NEVER called (Q13 safe).
+                var defaultPeriod = analystTools.GetDefaultPeriod();
+                var periodInfo = new PurchasingPeriodDto(
+                    From: defaultPeriod.From.ToDateOnly().ToString("yyyy-MM-dd"),
+                    To: defaultPeriod.To.ToDateOnly().ToString("yyyy-MM-dd"),
+                    JalaliLabel: defaultPeriod.Label,
+                    Month: defaultPeriod.Kind == JalaliPeriodKind.Month ? defaultPeriod.StartMonth.Key : null);
+                var filtersInfo = new PurchasingFiltersDto();
+
+                _ = RecordAuditSafeAsync(rawQuestion, "unavailable", Array.Empty<string>(), defaultPeriod);
+                return Ok(PurchasingCitedAnswer.CreateUnavailable(periodInfo, filtersInfo, dataMode.DataLabel, dataMode.IsDemo ? DemoNoticeText : null));
+            }
+
+            // 3. Server-dispatch mapped tool (T089, research R22)
+            var boundPeriod = analystTools.BindPeriod(route.PeriodRule);
+            var toolName = route.Tool ?? "purchasing_overview";
+
+            var periodDto = new PurchasingPeriodDto(
+                From: boundPeriod.From.ToDateOnly().ToString("yyyy-MM-dd"),
+                To: boundPeriod.To.ToDateOnly().ToString("yyyy-MM-dd"),
+                JalaliLabel: boundPeriod.Label,
+                Month: boundPeriod.Kind == JalaliPeriodKind.Month ? boundPeriod.StartMonth.Key : null);
+
+            ToolExecutionResult toolResult;
+            try
+            {
+                toolResult = await analystTools.DispatchAsync(toolName, boundPeriod, budgetCts.Token);
+            }
+            catch (AiException ex)
+            {
+                logger.LogWarning("Dispatched tool execution error: {Message}", RedactionHelper.Scrub(ex.Message));
+                _ = RecordAuditSafeAsync(rawQuestion, "provider", new[] { toolName }, boundPeriod);
+                return AssistantUnavailableResult(RedactionHelper.Scrub(ex.Message));
+            }
+            catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
+            {
+                logger.LogWarning("Dispatched tool execution timed out");
+                _ = RecordAuditSafeAsync(rawQuestion, "provider", new[] { toolName }, boundPeriod);
+                return AssistantUnavailableResult("پاسخ سرویس هوش مصنوعی به دلیل اتمام زمان مهلت دریافت نشد (timeout).");
+            }
+
+            var filtersDto = new PurchasingFiltersDto(
+                Vendor: toolResult.Vendor,
+                Product: toolResult.Product,
+                Category: toolResult.Category);
+
+            if (!toolResult.Success || toolResult.Facts == null || toolResult.Facts.Count == 0)
+            {
+                _ = RecordAuditSafeAsync(rawQuestion, "unavailable", new[] { toolName }, boundPeriod, toolResult.Vendor, toolResult.Product, toolResult.Category);
+                return Ok(PurchasingCitedAnswer.CreateUnavailable(periodDto, filtersDto, dataMode.DataLabel, dataMode.IsDemo ? DemoNoticeText : null));
+            }
+
+            // 4. Single CompleteAsync with empty tool specs for phrasing (model gets no tool specs)
+            string modelContent;
+            try
+            {
+                var promptWithFacts =
+                    PurchasingSystemPrompt +
+                    "\n\nحقایق استخراج‌شده از سامانه خرید که باید منحصراً مبنای پاسخ قرار گیرند:\n" +
+                    string.Join("\n", toolResult.Facts);
+
+                var phrasingMessages = new List<AiMessage>
                 {
-                    if (executedToolNames.Count >= AnalystTools.MAX_TOOL_CALLS_PER_CHAT)
-                    {
-                        break;
-                    }
+                    new("system", promptWithFacts),
+                    new("user", rawQuestion)
+                };
 
-                    executedToolNames.Add(call.Name);
-                    var result = await _analystTools.ExecuteAsync(call, budgetCts.Token);
+                var turn = await aiProvider.CompleteAsync(phrasingMessages, Array.Empty<AiToolSpec>(), budgetCts.Token);
+                modelContent = turn.Content ?? string.Empty;
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                throw;
+            }
+            catch (OperationCanceledException)
+            {
+                logger.LogWarning("Phrasing CompleteAsync timed out; falling back to server-templated facts");
+                modelContent = string.Empty;
+            }
+            catch (AiException ex)
+            {
+                logger.LogWarning("Phrasing CompleteAsync error: {Message}; falling back to server-templated facts", RedactionHelper.Scrub(ex.Message));
+                modelContent = string.Empty;
+            }
+            catch (Exception ex)
+            {
+                logger.LogWarning("Phrasing CompleteAsync unexpected failure [{Type}]; falling back to server-templated facts", ex.GetType().Name);
+                modelContent = string.Empty;
+            }
 
-                    if (result.Success && !string.IsNullOrEmpty(result.View))
-                    {
-                        executedViews.Add(result.View);
-                        foreach (var fact in result.Facts)
-                        {
-                            executedFacts.Add(fact);
-                        }
-                    }
+            // 5. Answer resolution via PurchasingCitedAnswer (facts enforcement)
+            var (answer, interpretation) = PurchasingCitedAnswer.ResolveAnswer(
+                toolResult.Facts,
+                periodDto,
+                filtersDto,
+                toolResult.View,
+                modelContent);
 
-                    messages.Add(new AiMessage("tool", result.ContentJson, ToolCallId: call.Id));
-                }
+            _ = RecordAuditSafeAsync(rawQuestion, "ok", new[] { toolName }, boundPeriod, toolResult.Vendor, toolResult.Product, toolResult.Category);
+
+            return Ok(new PurchasingChatResponse(
+                Answer: answer,
+                Period: periodDto,
+                Filters: filtersDto,
+                View: toolResult.View,
+                Facts: toolResult.Facts,
+                Interpretation: interpretation,
+                Unavailable: false,
+                DataLabel: dataMode.DataLabel,
+                DemoNotice: dataMode.IsDemo ? DemoNoticeText : null));
+        }
+        finally
+        {
+            if (userId.HasValue)
+            {
+                questionGate.Release(userId.Value);
             }
         }
-        catch (NotSupportedException)
+    }
+
+    private async Task RecordAuditSafeAsync(
+        string question,
+        string outcome,
+        IReadOnlyList<string> tools,
+        JalaliPeriod? period = null,
+        string? vendor = null,
+        string? product = null,
+        string? category = null)
+    {
+        try
         {
-            _logger.LogWarning("AI provider threw NotSupportedException (Ollama seam)");
-            return StatusCode(StatusCodes.Status503ServiceUnavailable, new AiChatUnavailableResponse(
-                DemoData: true,
-                Unavailable: true,
-                Answer: "پاسخی ارائه نشد؛ سرویس هوش مصنوعی در دسترس نیست.",
-                Message: "ارائه‌دهنده انتخابی هوش مصنوعی در این نسخه فعال نیست.",
-                Period: period,
-                Filters: filters,
-                Facts: Array.Empty<string>(),
-                Interpretation: string.Empty,
-                View: null));
-        }
-        catch (AiException ex)
-        {
-            _logger.LogWarning("AI provider exception: {Message}", RedactionHelper.Scrub(ex.Message));
-            return StatusCode(StatusCodes.Status503ServiceUnavailable, new AiChatUnavailableResponse(
-                DemoData: true,
-                Unavailable: true,
-                Answer: "پاسخی ارائه نشد؛ سرویس هوش مصنوعی در دسترس نیست.",
-                Message: RedactionHelper.Scrub(ex.Message),
-                Period: period,
-                Filters: filters,
-                Facts: Array.Empty<string>(),
-                Interpretation: string.Empty,
-                View: null));
-        }
-        catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
-        {
-            _logger.LogWarning("AI execution phase timed out");
-            return StatusCode(StatusCodes.Status503ServiceUnavailable, new AiChatUnavailableResponse(
-                DemoData: true,
-                Unavailable: true,
-                Answer: "پاسخی ارائه نشد؛ سرویس هوش مصنوعی در دسترس نیست.",
-                Message: "پاسخ سرویس هوش مصنوعی به دلیل اتمام زمان مهلت دریافت نشد (timeout).",
-                Period: period,
-                Filters: filters,
-                Facts: Array.Empty<string>(),
-                Interpretation: string.Empty,
-                View: null));
+            var targetText = question.Length > 200 ? question[..200] : question;
+            var periodLabel = period?.Kind == JalaliPeriodKind.Month ? period.StartMonth.Key : period?.Label;
+            var fromDate = period != null ? period.From.ToDateOnly().ToString("yyyy-MM-dd") : null;
+            var toDate = period != null ? period.To.ToDateOnly().ToString("yyyy-MM-dd") : null;
+
+            var detailPairs = new List<(string Key, string? Value)>
+            {
+                ("period", periodLabel),
+                ("from", fromDate),
+                ("to", toDate),
+                ("vendor", vendor),
+                ("product", product),
+                ("category", category),
+                ("tools", tools.Count > 0 ? string.Join(",", tools.Distinct(StringComparer.Ordinal)) : null),
+                ("outcome", outcome)
+            };
+
+            await auditLogger.RecordAsync(
+                new AuditEntry(
+                    AuditActions.Question,
+                    Target: targetText,
+                    Detail: AuditDetail.Of(detailPairs.ToArray())),
+                CancellationToken.None);
         }
         catch (Exception ex)
         {
-            _logger.LogWarning("AI execution unexpected failure [{ExceptionType}]", ex.GetType().Name);
-            return StatusCode(StatusCodes.Status503ServiceUnavailable, new AiChatUnavailableResponse(
-                DemoData: true,
-                Unavailable: true,
-                Answer: "پاسخی ارائه نشد؛ سرویس هوش مصنوعی در دسترس نیست.",
-                Message: "خطا در ارتباط با سرویس هوش مصنوعی.",
-                Period: period,
-                Filters: filters,
-                Facts: Array.Empty<string>(),
-                Interpretation: string.Empty,
-                View: null));
+            logger.LogWarning("Failed to record AI question audit entry: {Message}", ex.Message);
         }
-
-        stopwatch.Stop();
-        _logger.LogInformation(
-            "AI chat completed: iterations={Iterations}, tools={Tools}, durationMs={DurationMs}",
-            iterations,
-            string.Join(",", executedToolNames),
-            stopwatch.ElapsedMilliseconds);
-
-        bool anyToolExecuted = executedViews.Count > 0;
-        if (!anyToolExecuted)
-        {
-            return Ok(new AiChatResponse(
-                DemoData: true,
-                Answer: "داده‌ای در دسترس نیست؛ پاسخ بدون مرجع داده ارائه نشد.",
-                Period: period,
-                Filters: filters,
-                View: null,
-                Facts: Array.Empty<string>(),
-                Interpretation: string.Empty,
-                Unavailable: true));
-        }
-
-        var distinctViews = executedViews.Distinct(StringComparer.Ordinal).ToList();
-        string viewSummary = string.Join(", ", distinctViews);
-
-        string interpretation = finalContent?.Trim() ?? string.Empty;
-        string answer = !string.IsNullOrWhiteSpace(finalContent)
-            ? finalContent.Trim()
-            : string.Join("\n", executedFacts);
-
-        return Ok(new AiChatResponse(
-            DemoData: true,
-            Answer: answer,
-            Period: period,
-            Filters: filters,
-            View: viewSummary,
-            Facts: executedFacts,
-            Interpretation: interpretation,
-            Unavailable: false));
     }
 }

@@ -161,6 +161,8 @@ export interface SystemModules {
   auditLog: boolean;
   /** Data quality page (admin permission): navigation only. */
   dataQuality: boolean;
+  /** AI provider settings page (admin permission): navigation only. */
+  aiSettings: boolean;
 }
 
 export interface SystemStatus {
@@ -777,4 +779,83 @@ export interface DataQualityPage {
 /** GET /api/admin/data-quality[?types=a,b]: every issue type; `types` only narrows the focus. */
 export function getDataQuality(types: string[] = []): Promise<DataQualityPage> {
   return apiGet<DataQualityPage>(`/api/admin/data-quality${queryString({ types: types.join(',') })}`);
+}
+
+// ---- Local AI over Purchasing (Phase 4) ----
+
+export interface PurchasingPeriod {
+  from: string;
+  to: string;
+  jalaliLabel: string;
+  month?: string | null;
+}
+
+export interface PurchasingFilters {
+  vendor: string | null;
+  product: string | null;
+  category: string | null;
+}
+
+export interface PurchasingChatResponse {
+  answer: string;
+  period: PurchasingPeriod;
+  filters: PurchasingFilters;
+  view: string | null;
+  facts: string[];
+  interpretation: string;
+  unavailable: boolean;
+  dataLabel: DataLabel;
+  demoNotice?: string | null;
+}
+
+export interface PurchasingChatUnavailableResponse {
+  unavailable: boolean;
+  code?: string;
+  answer: string;
+  message: string;
+  period?: PurchasingPeriod | null;
+  filters?: PurchasingFilters | null;
+  facts: string[];
+  interpretation: string;
+  view: string | null;
+  dataLabel: DataLabel;
+  demoNotice?: string | null;
+}
+
+export function postPurchasingChat(question: string): Promise<PurchasingChatResponse> {
+  return apiPost<PurchasingChatResponse>('/api/ai/chat', { question });
+}
+
+export interface AiProviderConfig {
+  name: string;
+  endpoint: string;
+  model: string;
+  configured: boolean;
+  isDefault?: boolean;
+  enabled?: boolean;
+  ownerApprovalRecorded?: boolean;
+}
+
+export interface AiSettingsResponse {
+  answeringProvider: 'local' | 'cloud';
+  aggregatesOnlyNotice: string;
+  local: AiProviderConfig;
+  cloud: AiProviderConfig;
+}
+
+export interface AiTestResponse {
+  ok: boolean;
+  message: string;
+}
+
+export function getAiSettings(): Promise<AiSettingsResponse> {
+  return apiGet<AiSettingsResponse>('/api/admin/ai');
+}
+
+export function testAiProvider(target: 'local' | 'cloud'): Promise<AiTestResponse> {
+  return apiPost<AiTestResponse>('/api/admin/ai/test', { target });
+}
+
+export function setAiCloud(enabled: boolean, ownerApprovalNote?: string): Promise<AiSettingsResponse> {
+  return apiPost<AiSettingsResponse>('/api/admin/ai/cloud', { enabled, ownerApprovalNote });
 }

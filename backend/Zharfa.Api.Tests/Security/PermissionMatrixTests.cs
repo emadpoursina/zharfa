@@ -55,6 +55,11 @@ public class PermissionMatrixTests
         ["VendorFinancialsController.Vendor"] = [Permissions.VendorFinancials],
 
         ["AiController.Chat"] = [Permissions.AiQuery],
+        ["AiDemoController.Chat"] = [Permissions.AiQuery],
+
+        ["AiAdminController.GetStatus"] = [Permissions.Admin],
+        ["AiAdminController.Test"] = [Permissions.Admin],
+        ["AiAdminController.SetCloud"] = [Permissions.Admin],
 
         ["AdminController.GetProviderStatus"] = [Permissions.Admin],
         ["AdminController.GetReconciliation"] = [Permissions.Admin],
@@ -129,6 +134,42 @@ public class PermissionMatrixTests
             .ToList();
 
         Assert.Empty(reachable);
+    }
+
+    [Fact]
+    public void Non_admins_may_call_no_ai_admin_action()
+    {
+        foreach (var role in new[] { Roles.Management, Roles.Purchasing, Roles.Finance })
+        {
+            var reachable = ReachableBy(role)
+                .Where(pair => pair.Key.StartsWith("AiAdminController.", StringComparison.Ordinal))
+                .Select(pair => pair.Key)
+                .ToList();
+
+            Assert.Empty(reachable);
+        }
+    }
+
+    [Fact]
+    public void Admin_may_call_no_ai_query_action()
+    {
+        var reachable = ReachableBy(Roles.Admin)
+            .Where(pair => pair.Value.Contains(Permissions.AiQuery))
+            .Select(pair => pair.Key)
+            .ToList();
+
+        Assert.Empty(reachable);
+    }
+
+    [Fact]
+    public void Purchasing_may_call_ai_chat_but_not_ai_admin()
+    {
+        var reachable = ReachableBy(Roles.Purchasing);
+
+        Assert.True(reachable.ContainsKey("AiController.Chat"));
+        Assert.False(reachable.ContainsKey("AiAdminController.GetStatus"));
+        Assert.False(reachable.ContainsKey("AiAdminController.Test"));
+        Assert.False(reachable.ContainsKey("AiAdminController.SetCloud"));
     }
 
     [Theory]

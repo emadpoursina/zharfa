@@ -109,6 +109,12 @@ public sealed class PurchasingOverviewService(
         return new JalaliMonth(today.Year, today.Month);
     }
 
+    public async Task<bool> HasSuccessfulSyncAsync(CancellationToken cancellationToken)
+    {
+        var lastSynced = await ReadLastSucceededAtAsync(cancellationToken);
+        return lastSynced is not null;
+    }
+
     public async Task<PurchasingOverviewResult> GetAsync(JalaliMonth month, CancellationToken cancellationToken)
     {
         var basis = purchasingOptions.Value.DiscountBasis;

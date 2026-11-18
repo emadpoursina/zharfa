@@ -14,9 +14,9 @@ authorization check and every KPI calculation lives here, never in the frontend.
 | `Mabna/` | Read-only connector (`IMabnaReader`, SELECT-only guard, table allowlist) and `Mabna/Sync/`: source map, planner, runner, scheduler, job store |
 | `Data/` | PostgreSQL access (Npgsql, EF Core), migration runner, audit log, redaction |
 | `Analytics/` | Demo KPI definitions for sales, inventory and receivables |
-| `Ai/` | Business Analyst agent and the single-provider interface (local Ollama seam preserved, not implemented) |
+| `Ai/` | Purchasing AI tools (PurchasingAnalystTools), Local Ollama provider (OllamaAiProvider), cloud provider (CloudAiProvider), active resolver (ActiveAiProvider), settings (AiProviderSettings), and in-flight gate (AiQuestionGate) |
 
-Schema lives in `db/migrations` (Phase 1 adds `0005_purchasing_sync.sql` and `0006_purchasing_kpis.sql`; Phase 2 adds `0007_purchasing_reports.sql`).
+Schema lives in `db/migrations` (Phase 1 adds `0005_purchasing_sync.sql` and `0006_purchasing_kpis.sql`; Phase 2 adds `0007_purchasing_reports.sql`; Phase 3 adds `0008_permissions_audit_quality.sql`; Phase 4 adds `0009_local_ai_purchasing.sql`).
 Demo seeds live in `db/seed` and apply in demo mode only.
 
 ## Configuration (secrets stay out of the repo)
@@ -32,6 +32,7 @@ export MabnaSync__SourceMapFile="/path/to/purchase-source-map.json"   # gitignor
 export MabnaSource__AllowlistFile="/path/to/allowlist.txt"           # gitignored
 export Purchasing__DiscountBasis="line"         # line | lineAndDocument; production must match the verified map
 export Sync__NightlyTime="02:00" Sync__TimeZone="Asia/Tehran" Sync__WeeklyFullLoadDay="Friday"
+export LocalAi__Name="ollama" LocalAi__Endpoint="http://localhost:11434/v1" LocalAi__Model="qwen2:7b" # winner among pinned candidates (qwen2:7b, qwen2.5:7b, llama3.1:8b)
 export AiProvider__ApiKey="..."                 # server env / Docker secrets only
 ```
 

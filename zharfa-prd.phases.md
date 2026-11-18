@@ -75,7 +75,7 @@
 - [ ] With the AI provider stopped, the assistant reports it and dashboards still work
 - [ ] AI questions appear in the audit log; provider keys never appear in the frontend bundle, API responses, or logs
 **Out of scope:** Tables and charts in answers and saving them (Phase 5), sales and inventory questions (Releases 2–3).
-**Spec:** none
+**Spec:** specs/006-local-ai-purchasing
 
 ## Phase 5: AI reports, saved reports, and Excel export
 

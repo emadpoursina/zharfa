@@ -1,0 +1,22 @@
+# Zharfa — optional sibling Ollama compose file for local AI on the company server.
+#
+# Usage:
+#   docker compose -f deploy/docker-compose.yml -f deploy/docker-compose.ollama.yml --profile ollama up -d
+#
+# When running Ollama via this compose file, set in deploy/.env:
+#   LOCAL_AI_ENDPOINT=http://ollama:11434/v1
+#   LOCAL_AI_MODEL=qwen2:7b  # or winner among pinned candidates (qwen2:7b, qwen2.5:7b, llama3.1:8b)
+
+services:
+  ollama:
+    image: ollama/ollama:latest
+    profiles: ["ollama"]
+    container_name: zharfa-ollama
+    ports:
+      - "127.0.0.1:11434:11434"
+    volumes:
+      - ollama-models:/root/.ollama
+    restart: unless-stopped
+
+volumes:
+  ollama-models:

@@ -10,7 +10,7 @@ using System.Text.RegularExpressions;
 public static class RedactionHelper
 {
     private static readonly Regex SecretRegex = new(
-        @"(api[_-]?key|password|pwd|secret|token|connection\s*string|bearer|authorization)\s*[=:]\s*\S+",
+        @"\b(?:authorization\s*[:=]\s*)?bearer(?:\s+token)?(?:\s*[=:]\s*|\s+)\S+|(api[_-]?key|password|pwd|secret|token|connection\s*string|authorization)\s*[=:]\s*\S+",
         RegexOptions.IgnoreCase | RegexOptions.Compiled);
 
     public static string Scrub(string? input)

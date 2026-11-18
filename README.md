@@ -65,6 +65,14 @@ write to Mabna; development uses the offline simulator in `deploy/mabna-sim/`.
 - **Data Quality earliest date:** `DataQuality__EarliestJalaliDate` (default `1390-01-01`), set on-site to the start date of Mabna's first fiscal year. Documents dated earlier are flagged.
 - **Spec:** [`specs/005-permissions-audit-quality/`](specs/005-permissions-audit-quality/).
 
+## Release 1, Phase 4: Local AI over Purchasing
+
+- **Local default:** The AI assistant runs by default on a local model on the company server (`LocalAi__*`), with an optional sibling Ollama compose file (`deploy/docker-compose.ollama.yml`).
+- **Purchasing Assistant (`#/assistant`):** Available to users with the `ai.query` permission (`management`, `purchasing`, `finance`). Answers Persian purchasing questions citing period, filters, and source metric from allowlisted read-only tools.
+- **Admin AI settings (`#/settings/ai`):** Administrators view redacted provider status, run connection tests, and can opt in to cloud AI only with a recorded owner-approval note (`ai.cloud.approval_note`).
+- **Benchmark:** Model selection procedure and records in [`contracts/benchmark.md`](specs/006-local-ai-purchasing/contracts/benchmark.md) and [`quickstart.md`](specs/006-local-ai-purchasing/quickstart.md).
+- **Spec:** [`specs/006-local-ai-purchasing/`](specs/006-local-ai-purchasing/).
+
 ## Repository layout
 
 ```

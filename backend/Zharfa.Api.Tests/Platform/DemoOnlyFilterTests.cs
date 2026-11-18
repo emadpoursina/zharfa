@@ -107,23 +107,39 @@ public class DemoOnlyFilterTests
         Assert.True(modules.Users);
         Assert.True(modules.AuditLog);
         Assert.True(modules.DataQuality);
+        Assert.True(modules.AiSettings);
         Assert.False(modules.DemoPages);
         Assert.False(modules.Ai);
     }
 
     [Fact]
-    public void Production_purchasing_has_no_admin_modules_and_no_ai()
+    public void Production_purchasing_has_no_admin_modules_and_has_ai()
     {
         var modules = SystemModules.For(Production, RolePermissions.For(Roles.Purchasing));
 
         Assert.True(modules.Overview);
         Assert.True(modules.PurchasingReports);
+        Assert.True(modules.Ai);
         Assert.False(modules.DataSync);
         Assert.False(modules.Users);
         Assert.False(modules.AuditLog);
         Assert.False(modules.DataQuality);
+        Assert.False(modules.AiSettings);
         Assert.False(modules.DemoPages);
-        Assert.False(modules.Ai);
+    }
+
+    [Fact]
+    public void Production_management_has_ai_and_no_admin_modules()
+    {
+        var modules = SystemModules.For(Production, RolePermissions.For(Roles.Management));
+
+        Assert.True(modules.Ai);
+        Assert.False(modules.AiSettings);
+        Assert.False(modules.DemoPages);
+        Assert.False(modules.DataSync);
+        Assert.False(modules.Users);
+        Assert.False(modules.AuditLog);
+        Assert.False(modules.DataQuality);
     }
 
     [Fact]
@@ -134,6 +150,7 @@ public class DemoOnlyFilterTests
         Assert.True(modules.DemoPages);
         Assert.False(modules.Ai);
         Assert.True(modules.DataSync);
+        Assert.True(modules.AiSettings);
     }
 
     [Fact]
@@ -147,6 +164,7 @@ public class DemoOnlyFilterTests
         Assert.False(modules.Users);
         Assert.False(modules.AuditLog);
         Assert.False(modules.DataQuality);
+        Assert.False(modules.AiSettings);
     }
 
     [Fact]
@@ -162,6 +180,7 @@ public class DemoOnlyFilterTests
         Assert.False(modules.Users);
         Assert.False(modules.AuditLog);
         Assert.False(modules.DataQuality);
+        Assert.False(modules.AiSettings);
     }
 
     // ---- AI payload labels (FR-022, contracts/api.md §5) ----
@@ -211,7 +230,7 @@ public class DemoOnlyFilterTests
     [InlineData(typeof(InventoryController))]
     [InlineData(typeof(ReceivablesController))]
     [InlineData(typeof(MetaController))]
-    [InlineData(typeof(AiController))]
+    [InlineData(typeof(AiDemoController))]
     public void Demo_and_ai_controllers_carry_demo_only(Type controller)
     {
         Assert.True(HasDemoOnly(controller), $"{controller.Name} must carry [DemoOnly].");
@@ -222,6 +241,8 @@ public class DemoOnlyFilterTests
     [InlineData(typeof(SyncAdminController))]
     [InlineData(typeof(SystemStatusController))]
     [InlineData(typeof(AuthController))]
+    [InlineData(typeof(AiController))]
+    [InlineData(typeof(AiAdminController))]
     public void Purchasing_and_platform_controllers_do_not_carry_demo_only(Type controller)
     {
         Assert.False(HasDemoOnly(controller), $"{controller.Name} must stay available in production.");

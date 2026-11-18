@@ -72,4 +72,10 @@ public interface IAiProvider
         IReadOnlyList<AiMessage> messages,
         IReadOnlyList<AiToolSpec> tools,
         CancellationToken ct);
+
+    /// <summary>
+    /// Performs a fast (2-3s) liveness probe to verify provider availability before executing purchasing tools.
+    /// Throws AiException if unconfigured, unreachable, or timed out.
+    /// </summary>
+    Task ProbeLivenessAsync(CancellationToken ct) => Task.CompletedTask;
 }

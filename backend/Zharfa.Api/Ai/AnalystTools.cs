@@ -9,6 +9,7 @@ using System.Threading.Tasks;
 using Microsoft.Extensions.Logging;
 using Zharfa.Api.Analytics;
 using Zharfa.Api.Data;
+using Zharfa.Api.Purchasing.Reports;
 
 /// <summary>
 /// Result of executing an allowlisted analyst tool.
@@ -20,7 +21,11 @@ public record ToolExecutionResult(
     string? View,
     IReadOnlyList<string> Facts,
     string ContentJson,
-    bool Success);
+    bool Success,
+    JalaliPeriod? Period = null,
+    string? Vendor = null,
+    string? Product = null,
+    string? Category = null);
 
 /// <summary>
 /// Execution engine for allowlisted read-only analyst tools.

@@ -190,6 +190,22 @@ A documented PostgreSQL backup + restore procedure must be RUN AND VERIFIED ONCE
 on a Docker host before Demo 1 sign-off (FR-018) with the result recorded by the
 tester — do not claim it was run here (there is no Docker daemon on this host) (PRD §7.7).
 
+## Local AI over Purchasing (Release 1, Phase 4)
+
+- The assistant runs by default on a local model on the company server (`LocalAi__*`).
+- Optional sibling Ollama container:
+  ```bash
+  docker compose -f deploy/docker-compose.yml -f deploy/docker-compose.ollama.yml --profile ollama up -d
+  ```
+- Admins configure AI providers and run connection tests via `#/settings/ai` (`GET/POST /api/admin/ai*`).
+- The default model is selected via the documented benchmark procedure:
+  * Benchmark procedure & criteria: [contracts/benchmark.md](../specs/006-local-ai-purchasing/contracts/benchmark.md)
+  * Pinned 7–8B candidate models: `qwen2:7b`, `qwen2.5:7b`, `llama3.1:8b` (research R24).
+  * Benchmark runner script: `specs/006-local-ai-purchasing/scripts/run-benchmark.py`
+  * Sample benchmark record: [specs/006-local-ai-purchasing/benchmark/SAMPLE.md](../specs/006-local-ai-purchasing/benchmark/SAMPLE.md)
+  * Set `LOCAL_AI_MODEL` in `deploy/.env` to the benchmark winner (highest accuracy across the 20-question fixture; ties broken by faster median response time).
+- Development outbound capture: set `AiProvider__CapturePath` in `deploy/.env` to record outbound chat-completions JSON for verification against the 9router overlay.
+
 ## Desktop Shell
 
 The desktop shell connects to this deployment by setting:
