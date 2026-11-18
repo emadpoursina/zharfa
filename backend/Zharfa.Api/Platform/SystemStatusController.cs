@@ -11,12 +11,14 @@ using Microsoft.Extensions.Options;
 using Zharfa.Api.Analytics;
 using Zharfa.Api.Data;
 using Zharfa.Api.Mabna.Sync;
+using Zharfa.Api.Security;
 
 /// <summary>
-/// <c>GET /api/system/status</c> (contracts/api.md §1): the install's data mode and
-/// label, the last successful sync, and which modules exist in this install. Any
-/// signed-in user may read it. <c>modules.dataSync</c> is true only for the Admin
-/// role; <c>demoPages</c> and <c>ai</c> are true only in demo mode.
+/// <c>GET /api/system/status</c> (contracts/api.md §7): the install's data mode and
+/// label, the last successful sync, the caller's role and permissions, and which modules
+/// exist for this caller. Any signed-in user may read it. The module flags come from the
+/// caller's permission set (<see cref="SystemModules"/>); the server enforces the same rules
+/// on every endpoint.
 /// </summary>
 [ApiController]
 [Route("api/system")]
@@ -35,12 +37,18 @@ public sealed class SystemStatusController(
         var nowLocal = TimeZoneInfo.ConvertTimeFromUtc(DateTime.UtcNow, zone);
         var todayJalali = JalaliDate.FromDateTime(nowLocal);
 
+        var role = User.RoleId();
+        var granted = User.Permissions();
+
         return Ok(new
         {
             dataMode = dataMode.Mode,
             dataLabel = dataMode.DataLabel,
             lastSuccessfulSync = lastSucceededUtc is null ? null : Describe(lastSucceededUtc.Value, zone),
-            modules = SystemModules.For(dataMode, User.IsInRole("admin")),
+            role,
+            roleLabel = Roles.Label(role),
+            permissions = Permissions.All.Where(permission => granted.Contains(permission)).ToArray(),
+            modules = SystemModules.For(dataMode, granted),
             serverJalaliToday = $"{todayJalali.Year.ToString("D4", CultureInfo.InvariantCulture)}-" +
                                 $"{todayJalali.Month.ToString("D2", CultureInfo.InvariantCulture)}-" +
                                 $"{todayJalali.Day.ToString("D2", CultureInfo.InvariantCulture)}",

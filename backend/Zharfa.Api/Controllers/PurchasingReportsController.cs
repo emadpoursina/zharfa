@@ -7,9 +7,11 @@ using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.AspNetCore.Authorization;
+using Zharfa.Api.Security;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Options;
 using Zharfa.Api.Analytics;
+using Zharfa.Api.Audit;
 using Zharfa.Api.Mabna.Sync;
 using Zharfa.Api.Purchasing.Reports;
 
@@ -21,13 +23,14 @@ using Zharfa.Api.Purchasing.Reports;
 /// </summary>
 [ApiController]
 [Route("api/purchasing")]
-[Authorize(Roles = "manager,admin")]
+[Authorize(Policy = Permissions.PurchasingReports)]
 public sealed class PurchasingReportsController(
     PurchasingReportService reports,
     VendorDirectoryService directory,
     VendorComparisonService comparison,
     IOptions<SyncOptions> syncOptions,
-    TimeProvider clock) : ControllerBase
+    TimeProvider clock,
+    IAuthorizationService authorization) : ControllerBase
 {
     private const string UnknownReportMessage = "گزارش موردنظر یافت نشد.";
     private const string UnknownLookupMessage = "فهرست جستجو معتبر نیست؛ یکی از vendors، products یا categories را انتخاب کنید.";
@@ -43,9 +46,11 @@ public sealed class PurchasingReportsController(
     // ----- reports (contracts/api.md §3) ---------------------------------------------------------------------
 
     [HttpGet("reports/{reportId}")]
+    [AuditReportOpen("{reportId}")]
     public Task<IActionResult> Report(string reportId, CancellationToken ct) => RunReport(reportId, print: false, ct);
 
     [HttpGet("reports/{reportId}/print")]
+    [AuditReportOpen("{reportId}", Print = true)]
     public Task<IActionResult> ReportPrint(string reportId, CancellationToken ct) => RunReport(reportId, print: true, ct);
 
     private Task<IActionResult> RunReport(string reportId, bool print, CancellationToken ct) => Execute(async () =>
@@ -53,6 +58,18 @@ public sealed class PurchasingReportsController(
         if (!ReportCatalog.TryGet(reportId, out var definition) || definition is null)
         {
             return NotFound(new { message = UnknownReportMessage });
+        }
+
+        // The class policy is purchasing.reports; the transactions report also needs purchasing.transactions. The
+        // check runs here, before any query, so a refused caller never reaches the data (contracts/api.md §0).
+        if (reportId == "transactions")
+        {
+            var transactionsAllowed = await authorization.AuthorizeAsync(User, Permissions.PurchasingTransactions);
+            if (!transactionsAllowed.Succeeded)
+            {
+                await AccessDenied.RespondAsync(HttpContext, Permissions.PurchasingTransactions);
+                return new EmptyResult();
+            }
         }
 
         if (!TryFilter(definition, print, out var filter, out var error))
@@ -98,10 +115,10 @@ public sealed class PurchasingReportsController(
             case "transactions":
                 if (print)
                 {
-                    return await reports.DocumentsPrintAsync(filter, ct);
+                    return await reports.DocumentsPrintAsync(filter, ct, ReportKeys.Transactions);
                 }
 
-                return await reports.DocumentsAsync(filter, ct);
+                return await reports.DocumentsAsync(filter, ct, ReportKeys.Transactions);
 
             default:
                 throw new InvalidOperationException("report id outside the catalog: " + reportId);
@@ -110,10 +127,14 @@ public sealed class PurchasingReportsController(
 
     // ----- documents (contracts/api.md §5–§6) ----------------------------------------------------------------
 
+    [Authorize(Policy = Permissions.PurchasingTransactions)]
     [HttpGet("documents")]
+    [AuditReportOpen(ReportKeys.DrillDown)]
     public Task<IActionResult> Documents(CancellationToken ct) => DocumentList(print: false, ct);
 
+    [Authorize(Policy = Permissions.PurchasingTransactions)]
     [HttpGet("documents/print")]
+    [AuditReportOpen(ReportKeys.DrillDown, Print = true)]
     public Task<IActionResult> DocumentsPrint(CancellationToken ct) => DocumentList(print: true, ct);
 
     private Task<IActionResult> DocumentList(bool print, CancellationToken ct) => Execute(async () =>
@@ -131,7 +152,9 @@ public sealed class PurchasingReportsController(
         return Ok(await reports.DocumentsAsync(filter, ct));
     });
 
+    [Authorize(Policy = Permissions.PurchasingTransactions)]
     [HttpGet("documents/{documentId:long}/lines")]
+    [AuditReportOpen(ReportKeys.DrillDownLines)]
     public Task<IActionResult> DocumentLines(long documentId, CancellationToken ct) => Execute(async () =>
     {
         if (!TryFilter(ReportCatalog.Documents, print: false, out var filter, out var error))
@@ -178,9 +201,11 @@ public sealed class PurchasingReportsController(
     // ----- vendor directory and profile (contracts/api.md §1–§2) ---------------------------------------------
 
     [HttpGet("vendors")]
+    [AuditReportOpen(ReportKeys.Vendors)]
     public Task<IActionResult> Vendors(CancellationToken ct) => VendorList(print: false, ct);
 
     [HttpGet("vendors/print")]
+    [AuditReportOpen(ReportKeys.Vendors, Print = true)]
     public Task<IActionResult> VendorsPrint(CancellationToken ct) => VendorList(print: true, ct);
 
     private Task<IActionResult> VendorList(bool print, CancellationToken ct) => Execute(async () =>
@@ -199,6 +224,7 @@ public sealed class PurchasingReportsController(
     });
 
     [HttpGet("vendor-profile")]
+    [AuditReportOpen(ReportKeys.VendorProfile)]
     public Task<IActionResult> VendorProfile(CancellationToken ct) => Execute(async () =>
     {
         if (!TryFilter(VendorDirectoryService.ProfileDefinition, print: false, out var filter, out var error))
@@ -223,9 +249,11 @@ public sealed class PurchasingReportsController(
     // ----- vendor comparison (contracts/api.md §4) -----------------------------------------------------------
 
     [HttpGet("vendors/compare")]
+    [AuditReportOpen(ReportKeys.VendorsCompare)]
     public Task<IActionResult> VendorCompare(CancellationToken ct) => VendorCompareResponse(print: false, ct);
 
     [HttpGet("vendors/compare/print")]
+    [AuditReportOpen(ReportKeys.VendorsCompare, Print = true)]
     public Task<IActionResult> VendorComparePrint(CancellationToken ct) => VendorCompareResponse(print: true, ct);
 
     private Task<IActionResult> VendorCompareResponse(bool print, CancellationToken ct) => Execute(async () =>

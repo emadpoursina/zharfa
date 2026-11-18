@@ -3,6 +3,7 @@ namespace Zharfa.Api.Controllers;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.AspNetCore.Authorization;
+using Zharfa.Api.Security;
 using Microsoft.AspNetCore.Mvc;
 using Zharfa.Api.Ai;
 using Zharfa.Api.Analytics;
@@ -34,7 +35,7 @@ using Zharfa.Api.Platform;
 /// </summary>
 [ApiController]
 [Route("api/admin")]
-[Authorize(Roles = "admin")]
+[Authorize(Policy = Permissions.Admin)]
 public class AdminController : ControllerBase
 {
     private readonly IAiProvider _aiProvider;
@@ -90,21 +91,19 @@ public class AdminController : ControllerBase
         var range = PeriodFilters.Resolve(from, to);
         var result = await _reconciliationService.ReconcileAsync(range, cancellationToken);
 
-        if (result.Match)
-        {
-            await _auditLogger.RecordAsync(
-                "reconciliation.run",
-                RedactionHelper.Scrub($"from={range.From:yyyy-MM-dd}; to={range.To:yyyy-MM-dd}; match=true"),
-                cancellationToken);
-        }
-        else
-        {
-            await _auditLogger.RecordAsync(
-                "reconciliation.mismatch",
-                RedactionHelper.Scrub($"from={range.From:yyyy-MM-dd}; to={range.To:yyyy-MM-dd}; match=false; apiSales={result.ApiTotals.Sales}; viewSales={result.ViewTotals.Sales}; apiReceivables={result.ApiTotals.Receivables}; viewReceivables={result.ViewTotals.Receivables}"),
-                cancellationToken);
-        }
+        // The audit row holds the period and the match flag only, never the amounts (FR-015, data-model §2.2).
+        await _auditLogger.RecordAsync(
+            result.Match ? "reconciliation.run" : "reconciliation.mismatch",
+            ReconciliationAuditDetail(range, result.Match),
+            cancellationToken);
 
         return Ok(result);
     }
+
+    /// <summary>
+    /// Audit detail of an admin reconciliation: the period and the match flag (<c>from</c>, <c>to</c>, <c>match</c>).
+    /// Amounts are never written to the audit log.
+    /// </summary>
+    public static string ReconciliationAuditDetail(DateRange range, bool match) =>
+        RedactionHelper.Scrub($"from={range.From:yyyy-MM-dd}; to={range.To:yyyy-MM-dd}; match={(match ? "true" : "false")}");
 }

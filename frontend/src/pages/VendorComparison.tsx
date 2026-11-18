@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { getPurchasing, type VendorComparison as VendorComparisonData } from '../services/api';
 import { defaultPeriod, periodParams, type PeriodValue } from '../hooks/useReportQuery';
+import { DataQualityNotice } from '../components/DataQualityNotice';
 import { EntityPicker, type EntityChoice } from '../components/EntityPicker';
 import { MultiTrendChart, type TrendSeries } from '../components/MultiTrendChart';
 import { PeriodPicker } from '../components/PeriodPicker';
@@ -10,6 +11,7 @@ import { faNum, faQty, faRialFromDecimal } from '../utils/format';
 
 interface VendorComparisonProps {
   serverToday: string;
+  showLink?: boolean;
 }
 
 const MIN_VENDORS = 2;
@@ -20,7 +22,7 @@ const MAX_VENDORS = 5;
  * toggle), the chosen vendors, five measures per vendor and a monthly trend chart. Server messages are shown as they
  * come; the page never computes a figure of its own.
  */
-export function VendorComparison({ serverToday }: VendorComparisonProps) {
+export function VendorComparison({ serverToday, showLink }: VendorComparisonProps) {
   const [period, setPeriod] = useState<PeriodValue>(() => defaultPeriod(serverToday));
   const [chosen, setChosen] = useState<EntityChoice[]>([]);
   const [data, setData] = useState<VendorComparisonData | null>(null);
@@ -165,6 +167,7 @@ export function VendorComparison({ serverToday }: VendorComparisonProps) {
       {data && (
         <>
           <ReportStatusLine envelope={data} />
+          <DataQualityNotice notice={data.dataQuality} showLink={Boolean(showLink)} />
 
           <div className="flex justify-end">
             <button

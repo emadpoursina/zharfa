@@ -291,15 +291,18 @@ public sealed class PurchasingReconciliation(
             audit.Parameters.AddWithValue("at", runAt.UtcDateTime);
             audit.Parameters.AddWithValue("actor", AuditActor);
             audit.Parameters.AddWithValue("action", MismatchAction);
-            audit.Parameters.AddWithValue("detail", AuditDetail(report, mismatch));
+            audit.Parameters.AddWithValue("detail", MismatchAuditDetail(report, mismatch, dataMode));
             await audit.ExecuteNonQueryAsync(cancellationToken);
         }
 
         await tx.CommitAsync(cancellationToken);
     }
 
-    /// <summary>Period, filter and metric; the amounts only outside production (FR-017).</summary>
-    private string AuditDetail(ReconciliationReport report, MetricComparison mismatch)
+    /// <summary>
+    /// Period, filter and metric only, in every data mode: never the amounts (system, source, difference), which stay
+    /// in the reconciliation result and the <c>reconciliation_run</c> rows (FR-015, data-model §2.2).
+    /// </summary>
+    public static string MismatchAuditDetail(ReconciliationReport report, MetricComparison mismatch, DataModeOptions dataMode)
     {
         var detail = new Dictionary<string, object?>
         {
@@ -310,12 +313,6 @@ public sealed class PurchasingReconciliation(
             ["basis"] = report.Basis,
             ["dataMode"] = dataMode.Mode,
         };
-        if (!dataMode.IsProduction)
-        {
-            detail["system"] = mismatch.System;
-            detail["source"] = mismatch.Source;
-            detail["difference"] = mismatch.Difference;
-        }
 
         return RedactionHelper.Scrub(JsonSerializer.Serialize(detail, DetailJson));
     }

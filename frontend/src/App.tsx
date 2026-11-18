@@ -1,33 +1,49 @@
 import { useEffect, useState } from 'react';
+import { ChangePassword } from './pages/ChangePassword';
 import { DataModeBadge } from './components/DataModeBadge';
 import { DemoDataBanner } from './components/DemoDataBanner';
 import { LastSyncIndicator } from './components/LastSyncIndicator';
+import { NoAccess } from './components/NoAccess';
+import { AuditLog } from './pages/AuditLog';
+import { DataQuality } from './pages/DataQuality';
 import { DataSync } from './pages/DataSync';
 import { Dashboard } from './pages/Dashboard';
 import { OverviewPurchasing } from './pages/OverviewPurchasing';
 import { PurchasingReports } from './pages/PurchasingReports';
+import { UsersRoles } from './pages/UsersRoles';
 import { VendorComparison } from './pages/VendorComparison';
 import { Vendors, type VendorTarget } from './pages/Vendors';
 import { Login } from './pages/Login';
 import {
-  apiGet,
-  apiPost,
+  FORBIDDEN_EVENT,
+  PASSWORD_CHANGE_REQUIRED_EVENT,
+  getMe,
   getSystemStatus,
   isUnauthenticated,
+  apiPost,
+  type Me,
   type SystemModules,
   type SystemStatus,
 } from './services/api';
 
-interface UserInfo {
-  username: string;
-  role: string;
-}
+type ViewId = 'overview' | 'vendors' | 'reports' | 'compare' | 'dataSync' | 'users' | 'audit' | 'dataQuality' | 'demo';
 
-type ViewId = 'overview' | 'vendors' | 'reports' | 'compare' | 'dataSync' | 'demo';
+/** Hash route of each view (contracts/api.md §8). */
+const VIEW_HASH: Record<ViewId, string> = {
+  overview: '#/overview',
+  vendors: '#/vendors',
+  reports: '#/reports',
+  compare: '#/compare',
+  dataSync: '#/settings/sync',
+  users: '#/settings/users',
+  audit: '#/settings/audit',
+  dataQuality: '#/settings/data-quality',
+  demo: '#/demo',
+};
 
 /**
- * Views of the shell (no router). Which views exist is decided by the server in
- * GET /api/system/status (`modules`); the UI only shows what the server allows.
+ * Views of the shell. Which views exist is decided by the server in GET /api/system/status (`modules`); the UI only
+ * shows what the server allows, and the server enforces every endpoint.
  */
 const VIEW_TABS: ReadonlyArray<{
   id: ViewId;
@@ -39,6 +55,9 @@ const VIEW_TABS: ReadonlyArray<{
   { id: 'reports', label: 'گزارش‌های خرید', isVisible: (modules) => modules.purchasingReports },
   { id: 'compare', label: 'مقایسه تأمین‌کنندگان', isVisible: (modules) => modules.purchasingReports },
   { id: 'dataSync', label: 'تنظیمات ← همگام‌سازی داده', isVisible: (modules) => modules.dataSync },
+  { id: 'users', label: 'تنظیمات ← کاربران و نقش‌ها', isVisible: (modules) => modules.users },
+  { id: 'audit', label: 'تنظیمات ← گزارش رویدادها', isVisible: (modules) => modules.auditLog },
+  { id: 'dataQuality', label: 'تنظیمات ← کیفیت داده', isVisible: (modules) => modules.dataQuality },
   { id: 'demo', label: 'صفحات نمایشی', isVisible: (modules) => modules.demoPages },
 ];
 
@@ -47,20 +66,50 @@ type ViewTab = (typeof VIEW_TABS)[number];
 interface ViewContext {
   vendorTarget: VendorTarget | null;
   openVendor: (vendor: { key: string; name: string }, month: string) => void;
+  /** Issue type ids named by `#/settings/data-quality?types=a,b`. */
+  dataQualityTypes: string[];
+}
+
+/** The view a hash names (`#/settings/users?x=1` → users), or null for an unknown hash. */
+function viewFromHash(hash: string): ViewId | null {
+  const path = hash.split('?')[0];
+  const entry = (Object.keys(VIEW_HASH) as ViewId[]).find((id) => VIEW_HASH[id] === path);
+  return entry ?? null;
+}
+
+/** The issue type ids of a hash query (`#/settings/data-quality?types=a,b`), in order; empty when absent. */
+function typesFromHash(hash: string): string[] {
+  const query = hash.split('?')[1];
+  if (!query) {
+    return [];
+  }
+  const raw = new URLSearchParams(query).get('types');
+  return raw ? raw.split(',').map((type) => type.trim()).filter((type) => type.length > 0) : [];
+}
+
+function navigateTo(id: ViewId) {
+  window.location.hash = VIEW_HASH[id];
 }
 
 function renderView(id: ViewId, status: SystemStatus, context: ViewContext) {
+  const showLink = status.modules.dataQuality;
   switch (id) {
     case 'overview':
-      return <OverviewPurchasing serverJalaliToday={status.serverJalaliToday} onOpenVendor={context.openVendor} />;
+      return <OverviewPurchasing serverJalaliToday={status.serverJalaliToday} onOpenVendor={context.openVendor} showLink={showLink} />;
     case 'vendors':
-      return <Vendors serverToday={status.serverJalaliToday} target={context.vendorTarget} />;
+      return <Vendors serverToday={status.serverJalaliToday} target={context.vendorTarget} showLink={showLink} />;
     case 'reports':
-      return <PurchasingReports serverToday={status.serverJalaliToday} />;
+      return <PurchasingReports serverToday={status.serverJalaliToday} showLink={showLink} />;
     case 'compare':
-      return <VendorComparison serverToday={status.serverJalaliToday} />;
+      return <VendorComparison serverToday={status.serverJalaliToday} showLink={showLink} />;
     case 'dataSync':
       return <DataSync />;
+    case 'users':
+      return <UsersRoles />;
+    case 'audit':
+      return <AuditLog />;
+    case 'dataQuality':
+      return <DataQuality focusTypes={context.dataQualityTypes} />;
     case 'demo':
       // The AI agent is a separate module: hidden in production until Phase 4 (modules.ai).
       return <Dashboard aiEnabled={status.modules.ai} />;
@@ -68,26 +117,56 @@ function renderView(id: ViewId, status: SystemStatus, context: ViewContext) {
 }
 
 function App() {
-  const [user, setUser] = useState<UserInfo | null>(null);
+  const [user, setUser] = useState<Me | null>(null);
   const [loading, setLoading] = useState(true);
   const [loggingOut, setLoggingOut] = useState(false);
   const [status, setStatus] = useState<SystemStatus | null>(null);
   const [statusFailed, setStatusFailed] = useState(false);
-  const [requestedView, setRequestedView] = useState<ViewId>('overview');
+  const [hash, setHash] = useState(() => window.location.hash);
+  const [forbidden, setForbidden] = useState(false);
   const [vendorTarget, setVendorTarget] = useState<VendorTarget | null>(null);
 
   const isSignedIn = user !== null;
+  // A session whose password must change first sees only the change-password screen (research R6).
+  const mustChangePassword = user?.mustChangePassword === true;
 
   // Overview → vendor profile: opens the Vendors view on that vendor for the Overview's month.
   const openVendor = (vendor: { key: string; name: string }, month: string) => {
     setVendorTarget({ vendor, month });
-    setRequestedView('vendors');
+    navigateTo('vendors');
   };
 
+  // The hash selects the view; a new hash also clears any earlier no-access notice.
+  useEffect(() => {
+    const onHashChange = () => {
+      setHash(window.location.hash);
+      setForbidden(false);
+    };
+    window.addEventListener('hashchange', onHashChange);
+    return () => window.removeEventListener('hashchange', onHashChange);
+  }, []);
+
+  // A page's call refused for a missing permission shows the no-access view in place of the page.
+  useEffect(() => {
+    const onForbidden = () => setForbidden(true);
+    window.addEventListener(FORBIDDEN_EVENT, onForbidden);
+    return () => window.removeEventListener(FORBIDDEN_EVENT, onForbidden);
+  }, []);
+
+  // Any call answered 403 `password-change-required` switches the session to the change-password screen.
+  useEffect(() => {
+    const onPasswordChangeRequired = () => {
+      setUser((current) => (current ? { ...current, mustChangePassword: true } : current));
+    };
+    window.addEventListener(PASSWORD_CHANGE_REQUIRED_EVENT, onPasswordChangeRequired);
+    return () => window.removeEventListener(PASSWORD_CHANGE_REQUIRED_EVENT, onPasswordChangeRequired);
+  }, []);
+
+  // The signed-in user, with the role label and permissions decided by the server.
   useEffect(() => {
     let active = true;
 
-    apiGet<UserInfo>('/api/auth/me')
+    getMe()
       .then((currentUser) => {
         if (active) {
           setUser(currentUser);
@@ -110,9 +189,9 @@ function App() {
     };
   }, []);
 
-  // Data mode, last sync and available modules for the signed-in user.
+  // Data mode, last sync and available modules for the signed-in user. Not loaded while a password change is due.
   useEffect(() => {
-    if (!isSignedIn) {
+    if (!isSignedIn || mustChangePassword) {
       return;
     }
 
@@ -138,7 +217,14 @@ function App() {
     return () => {
       active = false;
     };
-  }, [isSignedIn]);
+  }, [isSignedIn, mustChangePassword]);
+
+  const handlePasswordChanged = () => {
+    // Reload the session: the flag is cleared on the server, and the status loads through the effect above.
+    getMe()
+      .then((currentUser) => setUser(currentUser))
+      .catch(() => setUser(null));
+  };
 
   const handleLogout = async () => {
     setLoggingOut(true);
@@ -150,15 +236,23 @@ function App() {
       setUser(null);
       setStatus(null);
       setStatusFailed(false);
-      setRequestedView('overview');
+      setForbidden(false);
       setVendorTarget(null);
       setLoggingOut(false);
     }
   };
 
+  const selectedId = viewFromHash(hash);
   const visibleTabs = status ? VIEW_TABS.filter((tab) => tab.isVisible(status.modules)) : [];
-  const currentTab: ViewTab | null =
-    visibleTabs.find((tab) => tab.id === requestedView) ?? visibleTabs[0] ?? null;
+  const requestedTab: ViewTab | null = selectedId ? VIEW_TABS.find((tab) => tab.id === selectedId) ?? null : null;
+  // A hash naming a view whose module the server does not grant renders the no-access view.
+  const requestedDenied = Boolean(status && requestedTab && !requestedTab.isVisible(status.modules));
+  const currentTab: ViewTab | null = requestedDenied
+    ? null
+    : requestedTab && visibleTabs.includes(requestedTab)
+      ? requestedTab
+      : visibleTabs[0] ?? null;
+  const showNoAccess = !mustChangePassword && (forbidden || requestedDenied);
 
   return (
     <div className="min-h-screen flex flex-col bg-gray-50 text-gray-900" dir="rtl">
@@ -174,7 +268,12 @@ function App() {
         </div>
       ) : !user ? (
         <main className="flex-1">
-          <Login onLoginSuccess={(u) => setUser(u)} />
+          <Login
+            onLoginSuccess={(signedIn) => {
+              setForbidden(false);
+              setUser(signedIn);
+            }}
+          />
         </main>
       ) : (
         <div className="flex-1 flex flex-col">
@@ -199,9 +298,7 @@ function App() {
                   <div className="text-sm font-semibold text-gray-800">{user.username}</div>
                   <div className="text-xs text-gray-500">
                     نقش:{' '}
-                    <span className="font-medium text-blue-700">
-                      {user.role === 'admin' ? 'مدیر ارشد' : 'مدیر'}
-                    </span>
+                    <span className="font-medium text-blue-700">{user.roleLabel}</span>
                   </div>
                 </div>
 
@@ -218,40 +315,47 @@ function App() {
           </header>
 
           <main className="flex-1 max-w-7xl w-full mx-auto p-6 space-y-6">
-            {statusFailed && (
-              <p role="alert" className="text-sm text-red-700 bg-red-50 border border-red-200 rounded-lg p-3">
-                وضعیت سامانه در دسترس نیست. صفحه را دوباره بارگذاری کنید.
-              </p>
-            )}
-
-            {!status && !statusFailed && (
-              <p className="text-sm text-gray-600">در حال بارگذاری وضعیت سامانه...</p>
-            )}
-
-            {status && (
+            {mustChangePassword ? (
+              <ChangePassword mustChange onDone={handlePasswordChanged} />
+            ) : (
               <>
-                <nav aria-label="بخش‌های سامانه" className="flex flex-wrap gap-2">
-                  {visibleTabs.map((tab) => {
-                    const active = currentTab?.id === tab.id;
-                    return (
-                      <button
-                        key={tab.id}
-                        type="button"
-                        aria-current={active ? 'page' : undefined}
-                        onClick={() => setRequestedView(tab.id)}
-                        className={`px-3 py-1.5 text-sm font-medium rounded-lg border transition cursor-pointer ${
-                          active
-                            ? 'bg-blue-600 text-white border-blue-600'
-                            : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-100'
-                        }`}
-                      >
-                        {tab.label}
-                      </button>
-                    );
-                  })}
-                </nav>
+                {statusFailed && (
+                  <p role="alert" className="text-sm text-red-700 bg-red-50 border border-red-200 rounded-lg p-3">
+                    وضعیت سامانه در دسترس نیست. صفحه را دوباره بارگذاری کنید.
+                  </p>
+                )}
 
-                {currentTab && renderView(currentTab.id, status, { vendorTarget, openVendor })}
+                {!status && !statusFailed && (
+                  <p className="text-sm text-gray-600">در حال بارگذاری وضعیت سامانه...</p>
+                )}
+
+                {status && (
+                  <>
+                    <nav aria-label="بخش‌های سامانه" className="flex flex-wrap gap-2">
+                      {visibleTabs.map((tab) => {
+                        const active = currentTab?.id === tab.id;
+                        return (
+                          <button
+                            key={tab.id}
+                            type="button"
+                            aria-current={active ? 'page' : undefined}
+                            onClick={() => navigateTo(tab.id)}
+                            className={`px-3 py-1.5 text-sm font-medium rounded-lg border transition cursor-pointer ${
+                              active
+                                ? 'bg-blue-600 text-white border-blue-600'
+                                : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-100'
+                            }`}
+                          >
+                            {tab.label}
+                          </button>
+                        );
+                      })}
+                    </nav>
+
+                    {showNoAccess && <NoAccess />}
+                    {!showNoAccess && currentTab && renderView(currentTab.id, status, { vendorTarget, openVendor, dataQualityTypes: typesFromHash(hash) })}
+                  </>
+                )}
               </>
             )}
           </main>

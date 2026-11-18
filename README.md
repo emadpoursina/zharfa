@@ -41,6 +41,30 @@ write to Mabna; development uses the offline simulator in `deploy/mabna-sim/`.
   allowlist are never committed.
 - **Spec:** [`specs/003-real-purchase-data/`](specs/003-real-purchase-data/).
 
+## Release 1, Phase 3: Permissions, Audit, and Data Quality
+
+- **Roles & Permissions:** Four roles with server-enforced permission sets:
+  | Role | Persian Label | Permissions |
+  |---|---|---|
+  | `admin` | مدیر سامانه | `overview`, `purchasing.reports`, `purchasing.transactions`, `admin` |
+  | `management` | مدیریت | `overview`, `purchasing.reports`, `purchasing.transactions`, `vendor.financials`, `ai.query`, `export` |
+  | `purchasing` | واحد خرید | `overview`, `purchasing.reports`, `purchasing.transactions`, `ai.query`, `export` |
+  | `finance` | واحد مالی | `overview`, `purchasing.reports`, `purchasing.transactions`, `vendor.financials`, `ai.query`, `export` |
+- **Demonstration accounts (demo mode only):**
+  - Administrator: `admin` / `admin123`
+  - Management: `manager` / `manager123` (role `management`)
+  - Purchasing: `purchasing` / `purchasing123`
+  - Finance: `finance` / `finance123`
+- **First Admin bootstrap (production):** Created only while no active Admin exists from `Bootstrap__AdminUsername` and either `Bootstrap__AdminPassword` or `Bootstrap__AdminPasswordFile` (e.g. Docker secret). Minimum 12 characters; forced password change at first sign-in (`must_change_password`). Passwords are never logged. The Demo 1 Manager keys (`Bootstrap__ManagerUsername`/`Password`) are retired.
+- **Account lockout:** 5 consecutive failed sign-in attempts lock the account for 15 minutes. Audited (`auth.locked`); an Admin can unlock the account via user administration.
+- **Settings pages (Admin):**
+  - **تنظیمات ← کاربران و نقش‌ها** (`#/settings/users`): user creation, role assignment, password reset, unlock, activate/deactivate.
+  - **تنظیمات ← گزارش رویدادها** (`#/settings/audit`): append-only audit trail filterable by user, action and Jalali date range; server-paged, no secrets or report figures.
+  - **تنظیمات ← کیفیت داده** (`#/settings/data-quality`): 7 issue types with counts, examples, affected reports, deferred sub-checks and rejected-at-sync counts.
+  - **تنظیمات ← همگام‌سازی داده** (`#/settings/sync`): manual sync trigger, status and history.
+- **Data Quality earliest date:** `DataQuality__EarliestJalaliDate` (default `1390-01-01`), set on-site to the start date of Mabna's first fiscal year. Documents dated earlier are flagged.
+- **Spec:** [`specs/005-permissions-audit-quality/`](specs/005-permissions-audit-quality/).
+
 ## Repository layout
 
 ```

@@ -7,6 +7,7 @@ import {
   type ReportDrill,
   type ReportTable,
 } from '../services/api';
+import { DataQualityNotice } from './DataQualityNotice';
 import { faQty, faRialFromDecimal } from '../utils/format';
 import { Pager } from './Pager';
 import { ReportStatusLine, ReportTable as Table, type ReportColumn } from './ReportTable';
@@ -21,6 +22,7 @@ interface DrillDownDialogProps {
   /** The row's drill-down filters (contracts/api.md §3). */
   drill: ReportDrill | null;
   onClose: () => void;
+  showLink?: boolean;
 }
 
 const FOCUSABLE = 'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex="-1"])';
@@ -41,7 +43,7 @@ function drillParams(drill: ReportDrill): Record<string, PurchasingQueryValue> {
  * the opening control. The list is server-paged; each document expands to its in-scope lines. The dialog states the
  * period and filters it applies.
  */
-export function DrillDownDialog({ open, title, baseParams, drill, onClose }: DrillDownDialogProps) {
+export function DrillDownDialog({ open, title, baseParams, drill, onClose, showLink }: DrillDownDialogProps) {
   const dialogRef = useRef<HTMLDivElement>(null);
   const openerRef = useRef<HTMLElement | null>(null);
   const [page, setPage] = useState(1);
@@ -192,6 +194,7 @@ export function DrillDownDialog({ open, title, baseParams, drill, onClose }: Dri
 
         <div className="space-y-4 overflow-y-auto">
           {data && <ReportStatusLine envelope={data} />}
+          <DataQualityNotice notice={data?.dataQuality} showLink={Boolean(showLink)} />
           {error && (
             <p role="alert" className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">
               {error}

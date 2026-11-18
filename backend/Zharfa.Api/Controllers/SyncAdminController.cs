@@ -6,6 +6,7 @@ using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.AspNetCore.Authorization;
+using Zharfa.Api.Security;
 using Microsoft.AspNetCore.Mvc;
 using Zharfa.Api.Data;
 using Zharfa.Api.Mabna.Sync;
@@ -17,7 +18,7 @@ using Zharfa.Api.Mabna.Sync;
 /// </summary>
 [ApiController]
 [Route("api/admin/sync")]
-[Authorize(Roles = "admin")]
+[Authorize(Policy = Permissions.Admin)]
 public sealed class SyncAdminController(
     SyncCoordinator coordinator,
     SyncRuntimeSettings runtime,

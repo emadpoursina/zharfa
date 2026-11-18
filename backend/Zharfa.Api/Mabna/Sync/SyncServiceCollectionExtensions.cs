@@ -9,6 +9,7 @@ using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Npgsql;
+using Zharfa.Api.DataQuality;
 using Zharfa.Api.Platform;
 
 /// <summary>Registers the purchasing sync (spec 003, US2). Call after <c>AddMabnaSource</c>.</summary>
@@ -45,6 +46,7 @@ public static class PurchasingSyncServiceCollectionExtensions
         services.AddSingleton<ISyncJobStore, PostgresSyncJobStore>();
         services.AddSingleton<ISyncRunWorker, SyncRunner>();
         services.AddSingleton<ISyncPreflight, SyncPreflight>();
+        services.AddSingleton<IDataQualityValidator, DataQualityValidator>();
         services.AddSingleton<SyncCoordinator>();
         services.AddHostedService<SyncScheduler>();
         return services;

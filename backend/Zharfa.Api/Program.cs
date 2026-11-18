@@ -11,6 +11,7 @@
 
 using System.Text.Json;
 using Microsoft.AspNetCore.Authentication.Cookies;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Zharfa.Api.Ai;
@@ -20,6 +21,7 @@ using Zharfa.Api.Mabna;
 using Zharfa.Api.Mabna.Sync;
 using Zharfa.Api.Platform;
 using Zharfa.Api.Purchasing;
+using Zharfa.Api.Security;
 
 // `reconcile purchasing …` runs the developer CLI instead of the web host (spec 003 FR-017, T055).
 var isReconcileCommand = Zharfa.Api.Purchasing.ReconcileCommandLine.IsReconcile(args);
@@ -61,6 +63,10 @@ if (discountBasisError is not null)
 {
     throw new InvalidOperationException(discountBasisError);
 }
+
+// Data-quality settings (spec 005, US4): the earliest plausible document date. An invalid value refuses startup and names the key.
+var dataQualityOptions = Zharfa.Api.DataQuality.DataQualityOptions.FromConfiguration(builder.Configuration);
+builder.Services.AddSingleton(dataQualityOptions);
 
 builder.Services.AddControllers()
     .ConfigureApiBehaviorOptions(options =>
@@ -129,6 +135,13 @@ builder.Services.AddScoped<PurchasingOverviewService>();
 builder.Services.AddScoped<Zharfa.Api.Purchasing.Reports.PurchasingReportService>();
 builder.Services.AddScoped<Zharfa.Api.Purchasing.Reports.VendorDirectoryService>();
 builder.Services.AddScoped<Zharfa.Api.Purchasing.Reports.VendorComparisonService>();
+// Users and roles administration (research R4): the admin actions and the last-Admin transaction.
+builder.Services.AddScoped<Zharfa.Api.Users.UserAdminService>();
+// Audit log (spec 005, US3): the in-memory report-open tracker (one per process, research R9) and the read-only query.
+builder.Services.AddSingleton<Zharfa.Api.Audit.ReportOpenTracker>();
+builder.Services.AddScoped<Zharfa.Api.Audit.AuditLogService>();
+builder.Services.AddScoped<Zharfa.Api.DataQuality.DataQualityService>();
+builder.Services.AddScoped<Zharfa.Api.DataQuality.DataQualityNoticeService>();
 
 builder.Services.AddHttpClient("ai", client =>
 {
@@ -159,6 +172,9 @@ builder.Services.AddAuthentication(CookieAuthenticationDefaults.AuthenticationSc
         options.ExpireTimeSpan = TimeSpan.FromHours(8);
         options.SlidingExpiration = true;
 
+        // Role, activity and forced-change flag are re-read from app_user on every request (research R3).
+        options.Events.OnValidatePrincipal = SessionValidator.ValidateAsync;
+
         options.Events.OnRedirectToLogin = context =>
         {
             context.Response.StatusCode = StatusCodes.Status401Unauthorized;
@@ -174,7 +190,19 @@ builder.Services.AddAuthentication(CookieAuthenticationDefaults.AuthenticationSc
         };
     });
 
-builder.Services.AddAuthorization();
+// Permission policies (research R1, contracts/api.md §0): one policy per permission id. A refused call goes through
+// AuditingAuthorizationResultHandler, which answers 401/403 in the Persian envelope and writes access.denied on a 403.
+builder.Services.AddSingleton<IAuthorizationHandler, PermissionAuthorizationHandler>();
+builder.Services.AddSingleton<IAuthorizationMiddlewareResultHandler, AuditingAuthorizationResultHandler>();
+builder.Services.AddAuthorization(options =>
+{
+    foreach (var permission in Permissions.All)
+    {
+        options.AddPolicy(permission, policy => policy
+            .RequireAuthenticatedUser()
+            .AddRequirements(new PermissionRequirement(permission)));
+    }
+});
 
 var app = builder.Build();
 
@@ -278,6 +306,8 @@ app.MapGet("/api/health", () => Results.Ok(new
 }));
 
 app.UseAuthentication();
+// A session that must change its password first may only reach the change itself, the profile and sign-out (research R6).
+app.UseMiddleware<PasswordChangeGate>();
 app.UseAuthorization();
 
 app.MapControllers();

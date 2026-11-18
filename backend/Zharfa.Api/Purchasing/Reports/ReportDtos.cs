@@ -16,6 +16,18 @@ public sealed record ReportPeriodDto(string Kind, string From, string To, string
 /// <summary>One active filter with its Persian display label.</summary>
 public sealed record ReportFilterEcho(string Name, string Value, string Label);
 
+/// <summary>One issue type in a report's data-quality notice (contracts/api.md §6).</summary>
+public sealed record DataQualityNoticeType(string Type, string Label, long Count);
+
+/// <summary>
+/// Server-computed data-quality notice for a report response (contracts/api.md §6, FR-027, FR-028).
+/// Added as the last parameter of ReportEnvelope and response records.
+/// </summary>
+public sealed record DataQualityNotice(IReadOnlyList<DataQualityNoticeType> IssueTypes, long AffectedRecords, bool Unavailable = false)
+{
+    public static DataQualityNotice CheckUnavailable { get; } = new([], 0, true);
+}
+
 /// <summary>A figure that could not be computed, with its reason code.</summary>
 public sealed record ReportUnavailable(string Figure, string Reason);
 
@@ -32,7 +44,8 @@ public sealed record ReportEnvelope(
     ReportPeriodDto Period,
     ReportPeriodDto? PreviousPeriod,
     IReadOnlyList<ReportFilterEcho> Filters,
-    IReadOnlyList<ReportUnavailable> Unavailable);
+    IReadOnlyList<ReportUnavailable> Unavailable,
+    DataQualityNotice? DataQuality = null);
 
 /// <summary>
 /// Totals over the full filtered result (never the page). Fields not used by a report stay null and are
@@ -178,7 +191,8 @@ public sealed record ReportTablePage<TRow>(
     string Dir,
     ReportTotals Totals,
     ReportTotals? PreviousTotals,
-    IReadOnlyList<TRow> Rows);
+    IReadOnlyList<TRow> Rows,
+    DataQualityNotice? DataQuality = null);
 
 /// <summary>
 /// A print response: the envelope, the totals, and at most 1,000 rows in the current sort
@@ -199,7 +213,8 @@ public sealed record ReportPrintPage<TRow>(
     int Limit,
     ReportTotals Totals,
     ReportTotals? PreviousTotals,
-    IReadOnlyList<TRow> Rows);
+    IReadOnlyList<TRow> Rows,
+    DataQualityNotice? DataQuality = null);
 
 /// <summary>
 /// Document lines response (contracts/api.md §6): the envelope without the period, the unfiltered document
@@ -215,7 +230,8 @@ public sealed record DocumentLinesResponse(
     IReadOnlyList<ReportUnavailable> Unavailable,
     DocumentRow Document,
     IReadOnlyList<LineRow> Lines,
-    ReportLineTotals Totals);
+    ReportLineTotals Totals,
+    DataQualityNotice? DataQuality = null);
 
 /// <summary>Totals of a document's lines.</summary>
 public sealed record ReportLineTotals(string LineAmount, string SignedAmount, string Quantity);

@@ -7,6 +7,7 @@ import {
   type VendorProfile as VendorProfileData,
 } from '../services/api';
 import { periodParams, type PageSize, type PeriodValue } from '../hooks/useReportQuery';
+import { DataQualityNotice } from '../components/DataQualityNotice';
 import { DocumentLinesPanel } from '../components/DocumentLinesPanel';
 import { KpiCard } from '../components/KpiCard';
 import { PeriodPicker } from '../components/PeriodPicker';
@@ -24,6 +25,7 @@ interface VendorProfileProps {
   /** The period the profile opens with (the Overview's month, or the directory's period). */
   initialPeriod: PeriodValue;
   onBack: () => void;
+  showLink?: boolean;
 }
 
 const documentColumns: ReportColumn<DocumentRow>[] = [
@@ -42,7 +44,7 @@ const documentColumns: ReportColumn<DocumentRow>[] = [
  * with the previous period (both labels), the 12-month trend, top products, returns, and the paged documents whose rows
  * expand to their lines. No balance, payment or credit figure exists here (FR-012).
  */
-export function VendorProfile({ vendor, serverToday, initialPeriod, onBack }: VendorProfileProps) {
+export function VendorProfile({ vendor, serverToday, initialPeriod, onBack, showLink }: VendorProfileProps) {
   const [period, setPeriod] = useState<PeriodValue>(initialPeriod);
   const [profile, setProfile] = useState<VendorProfileData | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -163,6 +165,7 @@ export function VendorProfile({ vendor, serverToday, initialPeriod, onBack }: Ve
       {profile && (
         <>
           <ReportStatusLine envelope={profile} />
+          <DataQualityNotice notice={profile.dataQuality} showLink={Boolean(showLink)} />
 
           <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
             <KpiCard label="خالص خرید" value={profile.totals.net ?? null} note={`تعداد اسناد: ${faQty(profile.totals.documentCount ?? null)}`} />

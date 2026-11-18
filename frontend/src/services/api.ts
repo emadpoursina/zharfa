@@ -7,6 +7,8 @@
 export class ApiError extends Error {
   readonly status: number;
   readonly isUnauthenticated: boolean;
+  /** Machine code from the server body (for example `forbidden` or `password-change-required`), when present. */
+  readonly code?: string;
   readonly data?: unknown;
 
   constructor(status: number, message: string, data?: unknown) {
@@ -14,12 +16,51 @@ export class ApiError extends Error {
     this.name = 'ApiError';
     this.status = status;
     this.isUnauthenticated = status === 401;
+    this.code = readCode(data);
     this.data = data;
   }
 }
 
+function readCode(data: unknown): string | undefined {
+  if (typeof data === 'object' && data !== null) {
+    const code = (data as Record<string, unknown>).code;
+    if (typeof code === 'string' && code.length > 0) {
+      return code;
+    }
+  }
+  return undefined;
+}
+
 export function isUnauthenticated(error: unknown): boolean {
   return error instanceof ApiError && error.isUnauthenticated;
+}
+
+/** 403 for a signed-in caller whose role lacks the permission (not the forced password change). */
+export function isForbidden(error: unknown): boolean {
+  return error instanceof ApiError && error.status === 403 && error.code !== 'password-change-required';
+}
+
+/** 403 `password-change-required`: the session must change its password before anything else. */
+export function isPasswordChangeRequired(error: unknown): boolean {
+  return error instanceof ApiError && error.status === 403 && error.code === 'password-change-required';
+}
+
+/** Window event: a call answered 403 `password-change-required`; the shell shows the change-password screen. */
+export const PASSWORD_CHANGE_REQUIRED_EVENT = 'zharfa:password-change-required';
+
+/** Window event: a call answered 403 for a missing permission; the shell shows the no-access view. */
+export const FORBIDDEN_EVENT = 'zharfa:forbidden';
+
+/** Tells the shell about a refusal, so a page the role may not see is replaced by the no-access view. */
+function announceRefusal(error: ApiError): void {
+  if (typeof window === 'undefined') {
+    return;
+  }
+  if (isPasswordChangeRequired(error)) {
+    window.dispatchEvent(new Event(PASSWORD_CHANGE_REQUIRED_EVENT));
+  } else if (isForbidden(error)) {
+    window.dispatchEvent(new Event(FORBIDDEN_EVENT));
+  }
 }
 
 async function handleResponse<T>(res: Response): Promise<T> {
@@ -62,7 +103,9 @@ async function handleResponse<T>(res: Response): Promise<T> {
     // If body parsing fails, preserve the default Persian error message
   }
 
-  throw new ApiError(res.status, errorMessage, responseData);
+  const refusal = new ApiError(res.status, errorMessage, responseData);
+  announceRefusal(refusal);
+  throw refusal;
 }
 
 export async function apiGet<T>(path: string): Promise<T> {
@@ -110,17 +153,39 @@ export interface SystemModules {
   dataSync: boolean;
   demoPages: boolean;
   ai: boolean;
-  /** Purchasing reports, vendor directory and comparison (spec 004): navigation only; the server enforces roles. */
+  /** Purchasing reports, vendor directory and comparison (spec 004): navigation only; the server enforces permissions. */
   purchasingReports: boolean;
+  /** Users and roles page (admin permission): navigation only. */
+  users: boolean;
+  /** Audit log page (admin permission): navigation only. */
+  auditLog: boolean;
+  /** Data quality page (admin permission): navigation only. */
+  dataQuality: boolean;
 }
 
 export interface SystemStatus {
   dataMode: DataMode;
   dataLabel: DataLabel;
   lastSuccessfulSync: LastSuccessfulSync | null;
+  /** The caller's role id, for example `purchasing`. */
+  role: string;
+  /** Persian label of the caller's role. */
+  roleLabel: string;
+  /** Permission ids granted to the caller, in the server's order. */
+  permissions: string[];
   modules: SystemModules;
   /** Jalali date of the server today in the sync time zone, e.g. 1405-08-25. */
   serverJalaliToday: string;
+}
+
+/** GET /api/auth/me: the signed-in user and the permissions of their role. */
+export interface Me {
+  id: number;
+  username: string;
+  role: string;
+  roleLabel: string;
+  permissions: string[];
+  mustChangePassword: boolean;
 }
 
 export interface PurchasingTotals {
@@ -173,6 +238,7 @@ export interface PurchasingOverview {
   topVendors: PurchasingRankedItem[] | null;
   topProducts: PurchasingRankedItem[] | null;
   unavailable: PurchasingUnavailable[];
+  dataQuality?: DataQualityNotice | null;
 }
 
 export type SyncTrigger = 'manual' | 'scheduled' | 'startup-recovery';
@@ -276,6 +342,12 @@ export interface ReportUnavailable {
   reason: string;
 }
 
+export interface DataQualityNotice {
+  issueTypes: { type: string; label: string; count: number }[];
+  affectedRecords: number;
+  unavailable: boolean;
+}
+
 /** The envelope every data response carries (contracts/api.md §0). */
 export interface ReportEnvelope {
   dataLabel: DataLabel;
@@ -288,6 +360,7 @@ export interface ReportEnvelope {
   previousPeriod?: ReportPeriod | null;
   filters: ReportFilterEcho[];
   unavailable: ReportUnavailable[];
+  dataQuality?: DataQualityNotice | null;
 }
 
 /** Totals over the full filtered result (never the page). Absent fields are not used by the report. */
@@ -499,4 +572,209 @@ export function getPurchasing<T>(path: string, params: Record<string, Purchasing
   }
   const query = search.toString();
   return apiGet<T>(`/api/purchasing/${path}${query ? `?${query}` : ''}`);
+}
+
+// ---------------------------------------------------------------------------
+// Accounts, roles and users (spec 005, contracts/api.md §1–§2). Every call goes through apiGet/apiPost; the server
+// enforces the Admin permission on the /api/admin routes and the signed-in rule on /api/auth.
+// ---------------------------------------------------------------------------
+
+export interface RolePermissionInfo {
+  id: string;
+  label: string;
+}
+
+export interface RoleInfo {
+  id: string;
+  label: string;
+  permissions: RolePermissionInfo[];
+}
+
+export interface UserRow {
+  id: number;
+  username: string;
+  role: string;
+  roleLabel: string;
+  active: boolean;
+  locked: boolean;
+  /** Jalali date and time with Persian digits, present while the account is locked. */
+  lockedUntilJalali: string | null;
+  mustChangePassword: boolean;
+  createdAtJalali: string;
+}
+
+export interface UsersResponse {
+  dataLabel: DataLabel;
+  users: UserRow[];
+}
+
+/** Reads the signed-in user (the `Me` shape of contracts/api.md §1). */
+export function getMe(): Promise<Me> {
+  return apiGet<Me>('/api/auth/me');
+}
+
+/** POST /api/auth/change-password: 204 on success; 400 carries the Persian reason. */
+export function changePassword(currentPassword: string, newPassword: string): Promise<void> {
+  return apiPost<void>('/api/auth/change-password', { currentPassword, newPassword });
+}
+
+/** GET /api/admin/roles: the four roles in contract order with their permission labels. */
+export function getRoles(): Promise<RoleInfo[]> {
+  return apiGet<{ roles: RoleInfo[] }>('/api/admin/roles').then((response) => response.roles);
+}
+
+/** GET /api/admin/users: every user sorted by username (never a hash or a failure counter). */
+export function getUsers(): Promise<UsersResponse> {
+  return apiGet<UsersResponse>('/api/admin/users');
+}
+
+export function createUser(username: string, password: string, role: string): Promise<UserRow> {
+  return apiPost<UserRow>('/api/admin/users', { username, password, role });
+}
+
+export function setUserRole(id: number, role: string): Promise<UserRow> {
+  return apiPost<UserRow>(`/api/admin/users/${id}/role`, { role });
+}
+
+export function resetUserPassword(id: number, password: string): Promise<void> {
+  return apiPost<void>(`/api/admin/users/${id}/password`, { password });
+}
+
+export function deactivateUser(id: number): Promise<UserRow> {
+  return apiPost<UserRow>(`/api/admin/users/${id}/deactivate`);
+}
+
+export function reactivateUser(id: number): Promise<UserRow> {
+  return apiPost<UserRow>(`/api/admin/users/${id}/reactivate`);
+}
+
+export function unlockUser(id: number): Promise<UserRow> {
+  return apiPost<UserRow>(`/api/admin/users/${id}/unlock`);
+}
+
+// ---------------------------------------------------------------------------
+// Audit log and data quality (spec 005, contracts/api.md §3–§4). Admin only; the server enforces the permission.
+// ---------------------------------------------------------------------------
+
+export interface AuditAction {
+  code: string;
+  label: string;
+}
+
+export interface AuditRow {
+  id: number;
+  /** ISO 8601 with the sync time zone offset. */
+  at: string;
+  /** yyyy/mm/dd HH:mm with Persian digits. */
+  atJalali: string;
+  actor: string | null;
+  action: string;
+  actionLabel: string;
+  target: string | null;
+  detail: string | null;
+}
+
+export interface AuditPage {
+  dataLabel: DataLabel;
+  total: number;
+  page: number;
+  pageSize: number;
+  rows: AuditRow[];
+}
+
+export interface AuditQueryParams {
+  user?: string;
+  action?: string;
+  /** Jalali yyyy-mm-dd (Latin or Persian digits). */
+  from?: string;
+  to?: string;
+  page?: number;
+  pageSize?: number;
+}
+
+function queryString(params: Record<string, PurchasingQueryValue>): string {
+  const search = new URLSearchParams();
+  for (const [name, value] of Object.entries(params)) {
+    if (value !== undefined && value !== null && value !== '') {
+      search.set(name, String(value));
+    }
+  }
+  const query = search.toString();
+  return query ? `?${query}` : '';
+}
+
+/** GET /api/admin/audit/actions: the action catalog with Persian labels. */
+export function getAuditActions(): Promise<AuditAction[]> {
+  return apiGet<{ actions: AuditAction[] }>('/api/admin/audit/actions').then((response) => response.actions);
+}
+
+/** GET /api/admin/audit: newest first, server-paged. A first page writes an audit entry on the server. */
+export function getAuditLog(params: AuditQueryParams = {}): Promise<AuditPage> {
+  return apiGet<AuditPage>(`/api/admin/audit${queryString({ ...params })}`);
+}
+
+export interface DataQualityExample {
+  recordKind: 'document' | 'line' | 'product';
+  documentNumber: string | null;
+  dateJalali: string | null;
+  vendor: string | null;
+  product: string | null;
+  field: string;
+  fieldLabel: string;
+}
+
+export interface DataQualityAffectedReport {
+  key: string;
+  label: string;
+}
+
+export interface DataQualityNotChecked {
+  code: string;
+  reason: string;
+}
+
+export interface DataQualityIssueType {
+  type: string;
+  label: string;
+  description: string;
+  /** Null when no check has run; the page then shows S-DQ-NO-CHECK. */
+  count: number | null;
+  examples: DataQualityExample[];
+  affectedReports: DataQualityAffectedReport[];
+  /** Persian note for a heuristic rule (inconsistent-product-ids), else null. */
+  heuristic: string | null;
+  notChecked: DataQualityNotChecked[];
+}
+
+export interface RejectedAtSync {
+  table: string;
+  reason: string;
+  count: number;
+}
+
+export interface DataQualityPage {
+  dataLabel: DataLabel;
+  latestSync: {
+    id: number;
+    status: string;
+    finishedAt: string | null;
+    finishedAtJalali: string | null;
+    error: string | null;
+  } | null;
+  latestSyncFailed: boolean;
+  check: {
+    runId: number;
+    syncJobId: number;
+    checkedAt: string;
+    checkedAtJalali: string;
+  } | null;
+  latestCheckFailed: boolean;
+  focus: string[];
+  issueTypes: DataQualityIssueType[];
+  rejectedAtSync: RejectedAtSync[];
+}
+
+/** GET /api/admin/data-quality[?types=a,b]: every issue type; `types` only narrows the focus. */
+export function getDataQuality(types: string[] = []): Promise<DataQualityPage> {
+  return apiGet<DataQualityPage>(`/api/admin/data-quality${queryString({ types: types.join(',') })}`);
 }

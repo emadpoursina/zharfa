@@ -116,3 +116,12 @@ Release 1 Phase 2 (spec 004, `specs/004-vendor-purchasing-reports/`). Run with 7
 - [ ] **Dev** Items 42–45, drug group master: object, key column, name column and change marker. Pass: each identified by catalog metadata; the key is unique (owner-approved duplicate-count aggregate). The object joins the live allowlist only once its items are `confirmed` or `corrected`; until then the category figures stay unavailable.
 - [ ] **Dev** Item 46, drug class second level: recorded as `unknown`. Not built in Phase 2; no check is run.
 - [ ] **Dev** The views that filter on `HOST_ID()` are never read for these items either, and none of them is added to the allowlist. Pass: grep of the map and allowlist finds none.
+
+### 7.7 Phase 3 items (Permissions, Audit, Data Quality)
+
+Release 1 Phase 3 (spec 005, `specs/005-permissions-audit-quality/`). Run with 7.1–7.6 on the same visit. Same rules: catalog metadata only, owner-approved aggregates only.
+
+- [ ] **Dev** First fiscal year start date: verify the start date of Mabna's first fiscal year and set `DataQuality__EarliestJalaliDate` (e.g. `1390-01-01`). Purchase documents dated earlier are flagged as invalid dates (rule DT2).
+- [ ] **Dev** Line net-amount and document-total columns: verify whether a line net-amount column and a document-total column exist in Mabna's purchase tables. Confirming and mapping these columns will enable the deferred `line-net-mismatch` and `document-total-mismatch` sub-checks in data quality (currently listed under «بررسی نشده»).
+- [ ] **Dev** Product code column(s): verify the product code column(s) in the product master and whether one code can map to several products. This will enable replacing the Release 1 name-based heuristic for `inconsistent-product-ids` (rule PI1) with a code-level verification rule.
+- [ ] **Dev** Purchase document number uniqueness: confirm whether purchase document numbers in Mabna are unique per document type alone or per vendor and document type. Release 1 duplicate rule DU1 partitions by `(doc_type, vendor_source_key, doc_number)`. Pass: confirmed with the owner / verified by catalog metadata and aggregates.

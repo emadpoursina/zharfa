@@ -174,6 +174,24 @@ public class AppUser
 
     [Column("is_active")]
     public bool IsActive { get; set; } = true;
+
+    [Column("username_key")]
+    public string UsernameKey { get; set; } = string.Empty;
+
+    [Column("failed_signins")]
+    public int FailedSignins { get; set; }
+
+    [Column("locked_until")]
+    public DateTime? LockedUntil { get; set; }
+
+    [Column("must_change_password")]
+    public bool MustChangePassword { get; set; }
+
+    [Column("created_at")]
+    public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+
+    [Column("updated_at")]
+    public DateTime UpdatedAt { get; set; } = DateTime.UtcNow;
 }
 
 [Table("audit_log")]
@@ -189,8 +207,14 @@ public class AuditLog
     [Column("actor")]
     public string? Actor { get; set; }
 
+    [Column("actor_user_id")]
+    public long? ActorUserId { get; set; }
+
     [Column("action")]
     public string Action { get; set; } = string.Empty;
+
+    [Column("target")]
+    public string? Target { get; set; }
 
     [Column("detail")]
     public string? Detail { get; set; }

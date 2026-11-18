@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { getPurchasing, type ReportPrint, type VendorRow } from '../services/api';
 import { defaultPeriod, useReportQuery, type PeriodValue } from '../hooks/useReportQuery';
 import { comparisonColumns } from '../components/ComparisonCells';
+import { DataQualityNotice } from '../components/DataQualityNotice';
 import { FilterBar } from '../components/FilterBar';
 import { Pager } from '../components/Pager';
 import { PrintReport } from '../components/PrintReport';
@@ -20,6 +21,7 @@ export interface VendorTarget {
 interface VendorsProps {
   serverToday: string;
   target?: VendorTarget | null;
+  showLink?: boolean;
 }
 
 const SORT_KEYS = ['net', 'name', 'code', 'lastPurchase'] as const;
@@ -28,7 +30,7 @@ const SORT_KEYS = ['net', 'name', 'code', 'lastPurchase'] as const;
  * The vendor directory (spec 004 T045, US1): the period, the Persian-tolerant search by name or code, sort and paging,
  * with the previous-period columns when compare is on. A row opens the vendor's profile in place with the current period.
  */
-export function Vendors({ serverToday, target = null }: VendorsProps) {
+export function Vendors({ serverToday, target = null, showLink }: VendorsProps) {
   const query = useReportQuery<VendorRow>({
     path: 'vendors',
     declared: ['compare'],
@@ -57,6 +59,7 @@ export function Vendors({ serverToday, target = null }: VendorsProps) {
         serverToday={serverToday}
         initialPeriod={profile.period}
         onBack={() => setProfile(null)}
+        showLink={showLink}
       />
     );
   }
@@ -119,6 +122,7 @@ export function Vendors({ serverToday, target = null }: VendorsProps) {
       />
 
       {data && <ReportStatusLine envelope={data} />}
+      <DataQualityNotice notice={data?.dataQuality} showLink={Boolean(showLink)} />
       {error && (
         <p role="alert" className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">
           {error}

@@ -2,6 +2,7 @@ namespace Zharfa.Api.Tests.Platform;
 
 using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
 using Microsoft.Extensions.Configuration;
 using Zharfa.Api.Platform;
@@ -209,8 +210,6 @@ public class DataModeTests
     [
         (prefix + "AdminUsername", "admin.user"),
         (prefix + "AdminPassword", "admin-password-123"),
-        (prefix + "ManagerUsername", "manager.user"),
-        (prefix + "ManagerPassword", "manager-password-123"),
     ];
 
     [Fact]
@@ -226,11 +225,11 @@ public class DataModeTests
     }
 
     [Fact]
-    public void Bootstrap_missing_manager_password_is_refused()
+    public void Bootstrap_manager_keys_are_not_required()
     {
-        var values = ValidBootstrap().Where(v => v.Key != "Bootstrap:ManagerPassword").ToArray();
-
-        Assert.NotNull(BootstrapAccounts.Validate(Config(values)));
+        // The Demo 1 Manager keys are retired (research R6): only the Admin pair is read.
+        Assert.Null(BootstrapAccounts.Validate(Config(ValidBootstrap())));
+        Assert.Null(BootstrapAccounts.Validate(Config(ValidBootstrap().Append(("Bootstrap:ManagerPassword", "x")).ToArray())));
     }
 
     [Fact]
@@ -242,5 +241,69 @@ public class DataModeTests
         var error = BootstrapAccounts.Validate(Config(values));
         Assert.NotNull(error);
         Assert.Contains(BootstrapAccounts.MinPasswordLength.ToString(), error);
+    }
+
+    [Fact]
+    public void Admin_password_file_is_accepted_and_its_trailing_newline_is_removed()
+    {
+        var path = Path.GetTempFileName();
+        try
+        {
+            File.WriteAllText(path, "admin-password-123\r\n");
+            var configuration = Config(
+                ("Bootstrap:AdminUsername", "admin.user"),
+                ("Bootstrap:AdminPasswordFile", path));
+
+            Assert.Null(BootstrapAccounts.Validate(configuration));
+            Assert.Equal("admin-password-123", BootstrapAccounts.ReadPassword(configuration));
+        }
+        finally
+        {
+            File.Delete(path);
+        }
+    }
+
+    [Fact]
+    public void Missing_password_and_file_names_both_keys_without_any_value()
+    {
+        var error = BootstrapAccounts.Validate(Config(("Bootstrap:AdminUsername", "admin.user")));
+
+        Assert.NotNull(error);
+        Assert.Contains("Bootstrap__AdminPassword", error);
+        Assert.Contains("Bootstrap__AdminPasswordFile", error);
+        Assert.DoesNotContain("admin.user", error);
+    }
+
+    [Fact]
+    public void Short_admin_password_from_the_file_is_refused_with_the_minimum()
+    {
+        var path = Path.GetTempFileName();
+        try
+        {
+            File.WriteAllText(path, "short\n");
+            var error = BootstrapAccounts.Validate(Config(
+                ("Bootstrap:AdminUsername", "admin.user"),
+                ("Bootstrap:AdminPasswordFile", path)));
+
+            Assert.NotNull(error);
+            Assert.Contains(BootstrapAccounts.MinPasswordLength.ToString(), error);
+            Assert.DoesNotContain("short", error);
+        }
+        finally
+        {
+            File.Delete(path);
+        }
+    }
+
+    [Fact]
+    public void Error_text_never_contains_the_supplied_password()
+    {
+        const string secret = "s3cr3t-x";
+        var error = BootstrapAccounts.Validate(Config(
+            ("Bootstrap:AdminUsername", "admin.user"),
+            ("Bootstrap:AdminPassword", secret)));
+
+        Assert.NotNull(error);
+        Assert.DoesNotContain(secret, error);
     }
 }

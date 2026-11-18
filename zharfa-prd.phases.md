@@ -58,7 +58,7 @@
 - [ ] After a sync with seeded bad records in the simulator, Data quality lists each issue type with count, examples, and affected reports
 - [ ] A report that depends on flagged records shows a data-quality notice
 **Out of scope:** Export and AI audit events (added by Phases 4–5 when those actions exist), Sales/Warehouse/Viewer roles (Releases 2–3).
-**Spec:** none
+**Spec:** specs/005-permissions-audit-quality
 
 ## Phase 4: Local AI over purchasing
 

@@ -7,6 +7,7 @@ using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.AspNetCore.Authorization;
+using Zharfa.Api.Security;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Logging;
@@ -60,7 +61,7 @@ public record AiChatUnavailableResponse(
 
 [ApiController]
 [Route("api/ai")]
-[Authorize(Roles = "manager,admin")]
+[Authorize(Policy = Permissions.AiQuery)]
 [DemoOnly]
 public class AiController : ControllerBase
 {

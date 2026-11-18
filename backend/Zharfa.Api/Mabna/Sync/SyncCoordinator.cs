@@ -8,6 +8,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
+using Zharfa.Api.DataQuality;
 using Zharfa.Api.Data;
 
 /// <summary>Outcome of asking for a run (mapped to HTTP by <c>SyncAdminController</c> and the scheduler).</summary>
@@ -49,7 +50,8 @@ public sealed class SyncCoordinator(
     IOptions<SyncOptions> options,
     SyncRuntimeSettings runtime,
     TimeProvider clock,
-    ILogger<SyncCoordinator> logger)
+    ILogger<SyncCoordinator> logger,
+    IDataQualityValidator? dataQuality = null)
 {
     private readonly object _gate = new();
     private Task _active = Task.CompletedTask;
@@ -172,6 +174,7 @@ public sealed class SyncCoordinator(
                     LogsFor(result.Tables, null));
                 logger.LogInformation("Purchasing sync job {JobId} succeeded in {ElapsedMs} ms.",
                     request.JobId, stopwatch.ElapsedMilliseconds);
+                await CheckDataQualityAsync(request.JobId);
             }
             catch (SyncRunException ex)
             {
@@ -191,6 +194,27 @@ public sealed class SyncCoordinator(
         finally
         {
             await runLock.DisposeAsync();
+        }
+    }
+
+    /// <summary>
+    /// The data-quality check of a succeeded run (research R12). A failure is logged and never changes the job's status.
+    /// A failed run never reaches this method, so the previous check result stays current.
+    /// </summary>
+    private async Task CheckDataQualityAsync(long jobId)
+    {
+        if (dataQuality is null)
+        {
+            return;
+        }
+
+        try
+        {
+            await dataQuality.RunAsync(jobId, clock.GetUtcNow(), CancellationToken.None);
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning("Data-quality check after sync job {JobId} failed [{ExceptionType}].", jobId, ex.GetType().Name);
         }
     }
 
