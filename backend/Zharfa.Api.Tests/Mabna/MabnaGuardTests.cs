@@ -275,7 +275,8 @@ public class MabnaConnectorRefusalTests
     {
         var entries = MabnaObjectPolicy.LoadEntries(new MabnaSourceOptions { AllowlistFile = ExampleAllowlistPath }).ToList();
 
-        Assert.Equal(5, entries.Count);
+        // Six entries: the five purchasing tables plus dbo.SimDrugGroup (spec 004 product category).
+        Assert.Equal(6, entries.Count);
         Assert.All(entries, e => Assert.False(MabnaObjectPolicy.IsExcluded(e.Split('.')[^1])));
     }
 

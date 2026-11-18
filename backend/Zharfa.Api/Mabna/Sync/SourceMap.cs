@@ -96,6 +96,13 @@ public sealed class SourceMapEntity
     public SourceMapField? Quantity { get; set; }
     public SourceMapField? LineDiscount { get; set; }
     public SourceMapField? Vat { get; set; }
+
+    /// <summary>Phase 2, optional: the vendor code shown to users (vendor entity only).</summary>
+    public SourceMapField? Code { get; set; }
+
+    /// <summary>Phase 2, optional: the drug group key of a product (product entity only).</summary>
+    public SourceMapField? CategoryKey { get; set; }
+
     public SourceMapDateField? Date { get; set; }
     public SourceMapAmountField? GrossAmount { get; set; }
     public SourceMapCancelledField? Cancelled { get; set; }
@@ -127,6 +134,9 @@ public sealed class SourceMap
     public SourceMapEntity? PurchaseInvoice { get; private set; }
     public SourceMapEntity? PurchaseReturn { get; private set; }
     public SourceMapEntity? PurchaseLine { get; private set; }
+
+    /// <summary>Phase 2, optional: the drug group master (product categories).</summary>
+    public SourceMapEntity? ProductCategory { get; private set; }
 
     /// <summary>Loads from <c>MabnaSync__SourceMapFile</c>; unset → not configured.</summary>
     public static SourceMapLoadResult LoadFromFile(string? path)
@@ -242,6 +252,7 @@ public sealed class SourceMap
             map.PurchaseInvoice = ReadEntity(entities, "purchaseInvoice");
             map.PurchaseReturn = ReadEntity(entities, "purchaseReturn");
             map.PurchaseLine = ReadEntity(entities, "purchaseLine");
+            map.ProductCategory = ReadEntity(entities, "productCategory");
 
             var problems = new List<SourceMapProblem>();
             if (map.PurchaseInvoice is null)
@@ -384,6 +395,8 @@ public sealed class SourceMap
         entity.Quantity = ReadField(element, "quantity");
         entity.LineDiscount = ReadField(element, "lineDiscount");
         entity.Vat = ReadField(element, "vat");
+        entity.Code = ReadField(element, "code");
+        entity.CategoryKey = ReadField(element, "categoryKey");
 
         if (element.TryGetProperty("date", out var date) && date.ValueKind == JsonValueKind.Object)
         {

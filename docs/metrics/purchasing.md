@@ -94,6 +94,67 @@ synced month is "data unavailable", not zero. A month with no purchases is zero.
 - A price difference (the difference between the purchase price and another price) is **not profit**. Gross margin and
   profit are not defined in Release 1.
 
+## Range base (Phase 2)
+
+`mabna.fn_purchase_lines(from_key, to_key, basis)` is now the single line-amount definition. It returns one row per
+line of every non-cancelled purchase document whose Jalali day key (`yyyymmdd`) lies in the range. The document-discount
+allocation is the same as in Phase 1 (per document, over all lines of that document). `mabna.fn_purchase_line_amounts`
+is a thin wrapper over it, and every Phase 1 function (`fn_purchase_totals`, `fn_top_vendors`, `fn_top_products`,
+`fn_purchase_trend`) reads that wrapper. A month is the day range `[yyyymm01, yyyymm31]`, so Phase 1 results are
+identical. Any change to `fn_purchase_lines` is gated by the Phase 2 Flow P0: the Overview JSON for two months must be
+identical before and after the change, and the Phase 1 reconciliation must still pass for every metric.
+
+## Reports (Phase 2)
+
+Scope: `specs/004-vendor-purchasing-reports` (FR-003, FR-012, FR-019, FR-020). The reports, the vendor directory and
+profile, the vendor comparison and the transaction history use the definitions below. Every measure reads the range
+base `mabna.fn_purchase_lines`, so a report total and an Overview figure for the same month are the same number.
+
+**Filters and unknown buckets.** A vendor filter applies to the document header; product and category filters apply
+to the line. A document with no vendor, a line with no product and a product with no category (or a category key
+missing from the master) each form one "نامشخص" (unknown) bucket, with key `~unknown` in requests and in drill-down
+links. Unknown buckets are counted in every total, so the buckets of any grouping add up to the same total.
+
+**Period and previous period.** Periods are Jalali: a month, a quarter, a year or a custom range (inclusive, at most
+1,098 days). A period whose `to` is later than today is trimmed to today, and the response says so (`trimmedTo`). The
+previous period is the same kind of period immediately before: a month before, a quarter before, a year before, and
+for a custom range the same number of days ending the day before `from`. Comparison is available only where the
+catalog allows it (`compare=true`); it is "no previous data" when the previous period starts before the first
+synced month.
+
+| Measure | Definition | Phase 1 name |
+|---|---|---|
+| Net purchases | Σ `sign × line_amount` (invoices plus, negated, returns) | `net` |
+| Gross purchases («خرید ناخالص») | Σ `line_amount` of invoice lines | `gross` |
+| Returns («برگشت از خرید») | Σ `line_amount` of return lines, shown positive | `returns` |
+| VAT | Σ `sign × vat_amount`; invoice and return VAT are also shown separately | `vat`, `vat_invoice`, `vat_return` |
+| Net quantity | Σ `sign × coalesce(quantity, 0)`; `quantityMissingLines` counts lines with no recorded quantity | new |
+| Invoice / return quantity | Σ quantity by document type | new |
+| Document count | Distinct non-cancelled documents (invoices and returns) with at least one in-scope line | `document_count` (vendor filter only) |
+| Pre-discount amount («مبلغ پیش از تخفیف») | Σ `gross_amount` of in-scope lines. Transaction history only. It is **not** «خرید ناخالص» | new |
+| Discount («تخفیف») | Σ `discount_amount` of in-scope lines. Transaction history only | new |
+| Last purchase date | Latest `doc_date` of the vendor's non-cancelled **invoices**, all time (not period-bound) | new |
+| Comparison | `delta = net(P) − net(prev(P))`; `percent = delta ÷ net(prev(P))`, null when that base is 0 | Phase 1 rule, generalized to periods |
+| Trend bucket | Net of the in-scope lines grouped by (`jalali_year`, `jalali_month`); a month before the first synced month is unavailable, not zero | `fn_purchase_trend` |
+
+Search (`q`) restricts the lines that are summed, in every table and in every trend bucket: vendor name or code, product
+name or category name, document number, depending on the report. Search text is normalized in SQL the same way as the
+stored search keys (ی/ک, spaces, ZWNJ, digit forms), so it matches the same text in any spelling.
+
+**Invariants** (checked by the quickstart flows; a failed invariant blocks the release):
+
+- **I1.** For a month, the sum over vendor groups of net equals the sum over product groups, the sum over category
+  groups and `fn_purchase_totals(month).net` (the Overview).
+- **I2.** A vendor profile's net for a month equals that vendor's net in the Overview top five.
+- **I3.** Every grouped row's net and quantity equal its drill-down totals; a returns row's returns equal the drill-down
+  `returnAmount`.
+- **I4.** For each document in a drill-down, Σ of the in-scope line amounts × sign equals the document's in-scope net.
+- **I5.** For a document, pre-discount − discount equals Σ line amounts (the transaction history «خالص»).
+
+**What these reports never show.** Payments, cheques, vendor balance, credit or debt, price differences and profit are
+not part of any Phase 2 report, export or print. The vendor directory and profile DTOs have no such fields (FR-003,
+FR-012). A purchase is a purchase: it is never presented as a payment, a payable or a margin.
+
 ## Reconciliation
 
 For one Jalali month and one filter, `reconcile purchasing --month YYYY-MM [--vendor key | --product key]

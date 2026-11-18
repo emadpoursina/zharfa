@@ -1,6 +1,7 @@
 namespace Zharfa.Api.Tests.Sync;
 
 using System.Globalization;
+using System.Text.Json.Nodes;
 using Zharfa.Api.Analytics;
 using Zharfa.Api.Mabna.Sync;
 
@@ -24,6 +25,15 @@ public class PurchaseRowMapperTests
         SourceRow.Create(values.Select(v => v.Column).ToList(), values.Select(v => v.Value).ToList());
 
     private static SourceRow VendorRow(object? key, object? name) => Row(("VendorID", key), ("VendorName", name));
+
+    private static SourceRow VendorWithCodeRow(object? key, object? name, object? code) =>
+        Row(("VendorID", key), ("VendorName", name), ("SimVendorCode", code));
+
+    private static SourceRow ProductRow(object? key, object? name, object? categoryKey) =>
+        Row(("ProductID", key), ("ProductName", name), ("SimDrugGroupID", categoryKey));
+
+    private static SourceRow CategoryRow(object? key, object? name) =>
+        Row(("DrugGroupID", key), ("DrugGroupName", name));
 
     private static SourceRow InvoiceRow(object? key, object? date, object? cancelled = null, object? vendor = null) =>
         Row(("DocID", key), ("SimDocNumber", "F-1"), ("VendorID", vendor ?? "V-1"), ("SimDocDate", date), ("IsCanceled", cancelled ?? 0));
@@ -238,5 +248,88 @@ public class PurchaseRowMapperTests
         Assert.Equal(1403, result.Record.JalaliYear);
         Assert.Equal(12, result.Record.JalaliMonth);
         Assert.Equal(30, result.Record.JalaliDay);
+    }
+
+    [Fact]
+    public void Vendor_code_is_normalized_with_persian_text_rules()
+    {
+        // Arabic yeh U+064A in the code becomes Persian yeh U+06CC; digits are kept as recorded.
+        var record = DemoMapper().MapVendor(VendorWithCodeRow("V-1", "نام", "AB-ي۱")).Record!;
+
+        Assert.Equal("AB-ی۱", record.Code);
+    }
+
+    [Theory]
+    [InlineData("   ")]
+    [InlineData("")]
+    [InlineData(null)]
+    public void Empty_vendor_code_becomes_null(string? code)
+    {
+        var record = DemoMapper().MapVendor(VendorWithCodeRow("V-1", "نام", code)).Record!;
+
+        Assert.Null(record.Code);
+    }
+
+    [Fact]
+    public void Missing_vendor_code_column_value_is_null_and_does_not_reject_the_vendor()
+    {
+        var result = DemoMapper().MapVendor(VendorRow("V-1", "نام"));
+
+        Assert.NotNull(result.Record);
+        Assert.Null(result.RejectReason);
+        Assert.Null(result.Record!.Code);
+    }
+
+    [Fact]
+    public void Product_category_key_is_mapped_to_drug_group_key()
+    {
+        var record = DemoMapper().MapProduct(ProductRow("P-1", "دارو", "G-3")).Record!;
+
+        Assert.Equal("G-3", record.CategoryKey);
+    }
+
+    [Theory]
+    [InlineData("")]
+    [InlineData(null)]
+    public void Unmapped_or_empty_product_category_key_is_null(string? categoryKey)
+    {
+        var record = DemoMapper().MapProduct(ProductRow("P-1", "دارو", categoryKey)).Record!;
+
+        Assert.Null(record.CategoryKey);
+    }
+
+    [Fact]
+    public void Product_category_master_row_is_normalized_like_other_names()
+    {
+        var mapper = DemoMapper();
+        var record = mapper.MapProductCategory(CategoryRow("G-3", "  گروه‌ي  دارویی ")).Record!;
+
+        Assert.Equal("G-3", record.SourceKey);
+        Assert.Equal("گروه‌ی دارویی", record.NameFa);
+    }
+
+    [Fact]
+    public void Empty_product_category_name_becomes_the_placeholder()
+    {
+        var record = DemoMapper().MapProductCategory(CategoryRow("G-4", "   ")).Record!;
+
+        Assert.Equal("(بدون نام)", record.NameFa);
+    }
+
+    [Fact]
+    public void Phase1_map_without_the_new_items_maps_code_and_category_to_null()
+    {
+        // Removing the Phase 2 entries from the example yields a Phase 1 map, which must still load.
+        var node = JsonNode.Parse(File.ReadAllText(ExampleMapPath))!;
+        var entities = node["entities"]!.AsObject();
+        entities["vendor"]!.AsObject().Remove("code");
+        entities["product"]!.AsObject().Remove("categoryKey");
+        entities.Remove("productCategory");
+        var loaded = SourceMap.Parse(node.ToJsonString());
+        Assert.True(loaded.IsValid, string.Join("; ", loaded.Problems.Select(p => p.Code)));
+        var mapper = new PurchaseRowMapper(new PurchaseMapping(loaded.Map!, isProduction: false));
+
+        Assert.Null(mapper.MapVendor(VendorWithCodeRow("V-1", "نام", "C-1")).Record!.Code);
+        Assert.Null(mapper.MapProduct(ProductRow("P-1", "دارو", "G-3")).Record!.CategoryKey);
     }
 }

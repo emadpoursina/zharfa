@@ -4,7 +4,16 @@ using System;
 using System.Globalization;
 using Zharfa.Api.Analytics;
 
-public sealed record MasterRecord(string SourceKey, string NameFa, bool? IsActiveSource);
+/// <summary>
+/// Master row. <paramref name="Code"/> is the vendor code (Phase 2, vendor rows only);
+/// <paramref name="CategoryKey"/> is the product's drug group key (Phase 2, product rows only).
+/// </summary>
+public sealed record MasterRecord(
+    string SourceKey,
+    string NameFa,
+    bool? IsActiveSource,
+    string? Code = null,
+    string? CategoryKey = null);
 
 public sealed record DocumentRecord(
     string SourceKey,
@@ -50,9 +59,38 @@ public sealed class PurchaseRowMapper(PurchaseMapping mapping)
 
     private readonly PurchaseMapping _mapping = mapping ?? throw new ArgumentNullException(nameof(mapping));
 
-    public MappedRow<MasterRecord> MapVendor(SourceRow row) => MapMaster(row, _mapping.Vendor);
+    public MappedRow<MasterRecord> MapVendor(SourceRow row)
+    {
+        var mapped = MapMaster(row, _mapping.Vendor);
+        if (mapped.Record is null || _mapping.VendorCode is null)
+        {
+            return mapped;
+        }
 
-    public MappedRow<MasterRecord> MapProduct(SourceRow row) => MapMaster(row, _mapping.Product);
+        var code = TextOrNull(row.Get(_mapping.VendorCode));
+        code = code is null ? null : PersianText.Normalize(code);
+        return new MappedRow<MasterRecord>(mapped.Record with { Code = code }, null, mapped.Warning);
+    }
+
+    public MappedRow<MasterRecord> MapProduct(SourceRow row)
+    {
+        var mapped = MapMaster(row, _mapping.Product);
+        if (mapped.Record is null || _mapping.ProductCategoryKey is null)
+        {
+            return mapped;
+        }
+
+        var categoryKey = KeyText(row.Get(_mapping.ProductCategoryKey));
+        return new MappedRow<MasterRecord>(mapped.Record with { CategoryKey = categoryKey }, null, mapped.Warning);
+    }
+
+    /// <summary>Product category master row (Phase 2). Only valid when the category master is mapped and usable.</summary>
+    public MappedRow<MasterRecord> MapProductCategory(SourceRow row)
+    {
+        var source = _mapping.ProductCategory ??
+                     throw new InvalidOperationException("productCategory is not usable in this data mode.");
+        return MapMaster(row, source);
+    }
 
     public MappedRow<DocumentRecord> MapInvoice(SourceRow row) => MapDocument(row, LogicalDocType.Invoice, _mapping.Invoice);
 

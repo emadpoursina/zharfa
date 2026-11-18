@@ -3,11 +3,15 @@
 -- !! NEVER RUN THIS AGAINST A REAL INSTALL. Throwaway database only. !!
 --
 -- What it does: fills 36 Jalali months (1402-09 .. 1405-08) of purchase invoices and returns into the
--- mabna.* synced copy (vendor, product, purchase_document, purchase_line). Nothing else is touched:
--- no sync_job, no source_record, no audit_log, no install_setting.
+-- mabna.* synced copy (product_category, vendor, product, purchase_document, purchase_line). Nothing else is
+-- touched: no sync_job, no source_record, no audit_log, no install_setting.
 -- Synthetic data only: every key starts with 'PERF-' and every name is generic ("تأمین‌کننده نمونه 12").
 -- It contains no source data. Dates are approximate (±1 day from the Jalali day); the Overview functions
 -- use the jalali_year / jalali_month / jalali_day columns, so the figures do not depend on doc_date.
+-- Phase 2 (spec 004, T072): also fills mabna.product_category (12 synthetic drug groups), product.drug_group_key
+-- (about 1 in 25 products left uncategorized, about 1 in 40 pointing at a key missing from the master, so both
+-- fall into the unknown category bucket) and vendor.code ('PERF-C' + number, every vendor, so the vendor
+-- directory search has a code to match).
 --
 -- Guard: the script refuses to run when the mabna tables already hold rows, so it cannot double-load.
 -- It does not write sync_job. To see Overview figures, insert one succeeded job on the throwaway database, e.g.
@@ -20,18 +24,30 @@
 DO $$
 BEGIN
     IF EXISTS (SELECT 1 FROM mabna.purchase_document) OR EXISTS (SELECT 1 FROM mabna.vendor)
-       OR EXISTS (SELECT 1 FROM mabna.product) THEN
+       OR EXISTS (SELECT 1 FROM mabna.product) OR EXISTS (SELECT 1 FROM mabna.product_category) THEN
         RAISE EXCEPTION 'purchasing-3y: mabna tables already hold rows; run only on an empty throwaway database';
     END IF;
 END $$;
 
--- 1. Vendors and products (synthetic master data).
-INSERT INTO mabna.vendor (source_key, name_fa, is_active_source, synced_at)
-SELECT 'PERF-V' || lpad(g::text, 4, '0'), 'تأمین‌کننده نمونه ' || g, true, now()
+-- 1. Drug groups, vendors and products (synthetic master data).
+INSERT INTO mabna.product_category (source_key, name_fa, synced_at)
+SELECT 'PERF-G' || lpad(g::text, 2, '0'), 'گروه نمونه ' || g, now()
+FROM generate_series(1, 12) AS g;
+
+INSERT INTO mabna.vendor (source_key, name_fa, code, is_active_source, synced_at)
+SELECT 'PERF-V' || lpad(g::text, 4, '0'), 'تأمین‌کننده نمونه ' || g, 'PERF-C' || lpad(g::text, 4, '0'), true, now()
 FROM generate_series(1, 120) AS g;
 
-INSERT INTO mabna.product (source_key, name_fa, synced_at)
-SELECT 'PERF-P' || lpad(g::text, 4, '0'), 'کالای نمونه ' || g, now()
+-- drug_group_key: 1 in 25 products has no group (NULL, unknown bucket); 1 in 40 names a key that is not in the
+-- master (falls into the unknown bucket, as research R7 requires); the rest map to one of the 12 groups.
+INSERT INTO mabna.product (source_key, name_fa, drug_group_key, synced_at)
+SELECT 'PERF-P' || lpad(g::text, 4, '0'),
+       'کالای نمونه ' || g,
+       CASE WHEN g % 25 = 0 THEN NULL
+            WHEN g % 40 = 0 THEN 'PERF-G99'
+            ELSE 'PERF-G' || lpad((1 + (g * 5) % 12)::text, 2, '0')
+       END,
+       now()
 FROM generate_series(1, 400) AS g;
 
 -- 2. Document headers: 36 months ending 1405-08, invoices and returns, with an approximate Gregorian date.
@@ -113,11 +129,13 @@ JOIN mabna.purchase_document pd ON pd.doc_type = x.doc_type
                                AND pd.source_key = x.source_key
 LEFT JOIN mabna.product pr ON pr.source_key = x.product_key;
 
+ANALYZE mabna.product_category;
 ANALYZE mabna.vendor;
 ANALYZE mabna.product;
 ANALYZE mabna.purchase_document;
 ANALYZE mabna.purchase_line;
 
+SELECT count(*) AS drug_groups FROM mabna.product_category;
 SELECT count(*) AS vendors FROM mabna.vendor;
 SELECT count(*) AS products FROM mabna.product;
 SELECT count(*) AS documents FROM mabna.purchase_document;

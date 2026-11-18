@@ -16,7 +16,7 @@ authorization check and every KPI calculation lives here, never in the frontend.
 | `Analytics/` | Demo KPI definitions for sales, inventory and receivables |
 | `Ai/` | Business Analyst agent and the single-provider interface (local Ollama seam preserved, not implemented) |
 
-Schema lives in `db/migrations` (Phase 1 adds `0005_purchasing_sync.sql` and `0006_purchasing_kpis.sql`).
+Schema lives in `db/migrations` (Phase 1 adds `0005_purchasing_sync.sql` and `0006_purchasing_kpis.sql`; Phase 2 adds `0007_purchasing_reports.sql`).
 Demo seeds live in `db/seed` and apply in demo mode only.
 
 ## Configuration (secrets stay out of the repo)
@@ -61,6 +61,44 @@ It needs a succeeded sync, the Mabna settings above and `Zharfa__DataMode`. It p
 stdout and exits `0` (all pass), `1` (mismatch, sign-off blocked) or `2` (error). In `production` the
 amounts are omitted unless `--show-amounts` is given. Deployment usage is in `deploy/README.md`; the metric
 definitions are in `docs/metrics/purchasing.md`.
+
+## Purchasing reports API (Release 1, Phase 2)
+
+Vendor directory and profile, the seven purchasing reports, the document drill-down, the filter-bar lookups and
+the vendor comparison. The controller is `Controllers/PurchasingReportsController.cs`; the logic lives in
+`Purchasing/Reports/` (`ReportCatalog`, `ReportFilter`, `JalaliPeriod`, `PurchasingReportService`,
+`VendorDirectoryService`, `VendorComparisonService`, `ReportSql`, `PrintLimit`). Full request and response shapes
+are in `specs/004-vendor-purchasing-reports/contracts/api.md`; the measures are in `docs/metrics/purchasing.md`
+("Reports").
+
+All endpoints are under `/api/purchasing`, require `manager` or `admin` (401 anonymous, 403 other roles), and are
+available in both production and demo (not `[DemoOnly]`). Money is returned as exact decimal **strings** in Rial with
+4 decimals; an unavailable figure is `null` with a reason in `unavailable[]`.
+
+| Endpoint | Purpose |
+|---|---|
+| `GET /vendors` | Vendor directory: net, last purchase date, search by name or code, optional comparison |
+| `GET /vendor-profile?vendor={key}` | One vendor: totals, comparison, 12-month trend, top products, returns, documents. The key is a query parameter because source keys can hold `/` |
+| `GET /vendors/compare?vendors=K1,K2[,…]` | Two to five vendors side by side with a 12-month trend (400 outside 2..5 distinct keys) |
+| `GET /reports/{reportId}` | `by-vendor`, `by-product`, `by-category`, `trend`, `top-products`, `returns`, `transactions` |
+| `GET /documents`, `GET /documents/{id}/lines` | Drill-down documents and their lines (404 for an unknown or cancelled document) |
+| `GET /lookup/{vendors\|products\|categories}?q=&limit=` | Filter-bar search, at most 50 items |
+| `GET …/print` | Print twin of every table endpoint above (`vendors`, `vendors/compare`, `reports/{id}`, `documents`): same parameters, no paging, at most 1,000 rows (`truncated` when more) |
+
+Shared parameters: `period` (`month` | `quarter` | `year` | `custom`) with `month`, `quarter`, `year` or Jalali
+`from`/`to`; `compare`; `vendor`, `product`, `category` (source key or `~unknown`); `q` (≤ 100 characters);
+`sort`, `dir`; `page` and `pageSize` (25 | 50 | 100). Invalid input answers 400 with a Persian `message`.
+
+**Timeout.** Each report query has a 15-second command timeout. A query over that budget answers **503** with
+`{ "message": "گزارش در زمان مجاز آماده نشد؛ بازه را کوتاه‌تر کنید." }`; the Persian message tells the user to shorten the
+period. (`PurchasingReportService.CommandTimeoutSeconds`.)
+
+**Feature flag.** `GET /api/system/status` returns `modules.purchasingReports: true` for every signed-in user. It only
+controls navigation; every endpoint above enforces the role on the server.
+
+**Data.** The reports read the synced `mabna.*` copy through `mabna.fn_purchase_lines` (migration
+`db/migrations/0007_purchasing_reports.sql`). They never query Mabna per request and never read Mabna's
+host-filtered report views. Nothing here returns payments, vendor balance, credit or debt.
 
 ## Tests
 

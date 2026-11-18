@@ -285,3 +285,29 @@ cp -R ../../../zharfa/deploy/mabna-sim/generated/. deploy/mabna-sim/generated/
 ```
 
 Only `generated/.gitkeep` is tracked; never `git add` anything else under `generated/`.
+
+## Phase 2 scenario (spec 004)
+
+Synthetic data for the vendor and purchasing reports (quickstart §0 and Flows P0–P10). It extends
+the purchasing scenario above; every name is made up or comes from the gitignored candidate map.
+
+Add to the scenario in `generated/scenario.py` (gitignored), on top of the Phase 1 tables:
+
+- a drug group master (`SimDrugGroup`) with its key and name columns, plus a `SimDrugGroupID`
+  column on the product table, so products point at groups;
+- a `SimVendorCode` column on the vendor table;
+- the quickstart §0 cases:
+  - a vendor whose name is written with Arabic ي and ك, next to the Persian spelling;
+  - a vendor name containing a ZWNJ (U+200C);
+  - two vendors with the same normalized name and different codes;
+  - a product without a category (`SimDrugGroupID` NULL);
+  - a product whose category key is missing from the drug group master;
+  - three years of documents (one Jalali month range per year, plus the current year);
+  - a return dated in a later month than the invoice it returns;
+  - a cancelled document;
+  - more than 1,000 documents in one year, so the print limit (1,000 rows) is reached.
+
+Regenerate with the candidate map and the allowlist from `example/` as in §3. Generator changes,
+if any, must stay generic (no real names) in `gen_seed.py` and/or `seedgen.py`. The example map
+(`example/purchase-source-map.example.json`) already carries the Phase 2 items with the made-up
+names `SimVendorCode`, `SimDrugGroupID` and `dbo.SimDrugGroup` (`DrugGroupID`, `DrugGroupName`).

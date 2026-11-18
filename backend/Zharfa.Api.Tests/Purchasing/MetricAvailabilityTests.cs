@@ -1,5 +1,6 @@
 namespace Zharfa.Api.Tests.Purchasing;
 
+using System.Text.Json.Nodes;
 using Zharfa.Api.Mabna.Sync;
 using Zharfa.Api.Purchasing;
 
@@ -280,5 +281,189 @@ public class MetricAvailabilityTests
 
         Assert.Equal(MetricAvailability.SourceItemUnverified, result[MetricAvailability.FigureGross]);
         Assert.Equal(MetricAvailability.SourceItemUnverified, result[MetricAvailability.FigureNet]);
+    }
+
+    // ---- T011: Phase 2 figures (spec 004, source-map-delta.md availability table) ----
+
+    private static readonly string[] Phase2Figures =
+    {
+        MetricAvailability.FigureVendorCode, MetricAvailability.FigureCategory,
+        MetricAvailability.FigureQuantity, MetricAvailability.FigureVendorReport,
+        MetricAvailability.FigureProductReport, MetricAvailability.FigureReturnsReport,
+        MetricAvailability.FigureTransactions
+    };
+
+    /// <summary>The example map without the productCategory entity (a map that lacks the optional Phase 2 entity).</summary>
+    private static SourceMap MapWithoutProductCategory()
+    {
+        var node = JsonNode.Parse(File.ReadAllText(ExampleMapPath))!;
+        node["entities"]!.AsObject().Remove("productCategory");
+        var loaded = SourceMap.Parse(node.ToJsonString());
+        Assert.True(loaded.IsValid, string.Join("; ", loaded.Problems.Select(p => p.Code)));
+        return loaded.Map!;
+    }
+
+    [Fact]
+    public void Phase2_figures_are_unavailable_with_no_successful_sync()
+    {
+        var result = Evaluate(Map(), isProduction: false, hasSync: false);
+
+        Assert.All(Phase2Figures, figure => Assert.Equal(MetricAvailability.NoSuccessfulSync, result[figure]));
+    }
+
+    [Fact]
+    public void Phase2_figures_are_available_in_demo_with_the_candidate_example_map()
+    {
+        var result = Evaluate(Map(), isProduction: false, hasSync: true);
+
+        Assert.All(Phase2Figures, figure => Assert.Null(result[figure]));
+    }
+
+    [Fact]
+    public void Phase2_figures_are_unverified_in_production_with_candidate_items()
+    {
+        var result = Evaluate(Map(), isProduction: true, hasSync: true);
+
+        Assert.All(Phase2Figures, figure => Assert.Equal(MetricAvailability.SourceItemUnverified, result[figure]));
+    }
+
+    [Fact]
+    public void Vendor_code_column_unmapped_makes_vendorCode_unmapped_only()
+    {
+        var map = Map();
+        map.Vendor!.Code = null;
+        var result = Evaluate(map, isProduction: false, hasSync: true);
+
+        Assert.Equal(MetricAvailability.SourceItemUnmapped, result[MetricAvailability.FigureVendorCode]);
+        Assert.Null(result[MetricAvailability.FigureVendorReport]);
+        Assert.Null(result[MetricAvailability.FigureNet]);
+    }
+
+    [Fact]
+    public void Unverified_vendor_code_status_makes_vendorCode_unverified_in_demo()
+    {
+        var map = Map();
+        map.Vendor!.Code!.Status = "unknown";
+        var result = Evaluate(map, isProduction: false, hasSync: true);
+
+        Assert.Equal(MetricAvailability.SourceItemUnverified, result[MetricAvailability.FigureVendorCode]);
+    }
+
+    [Fact]
+    public void Category_is_unavailable_when_the_category_entity_is_missing()
+    {
+        var result = Evaluate(MapWithoutProductCategory(), isProduction: false, hasSync: true);
+
+        Assert.Equal(MetricAvailability.SourceItemUnmapped, result[MetricAvailability.FigureCategory]);
+        Assert.Null(result[MetricAvailability.FigureTopProducts]);
+    }
+
+    [Fact]
+    public void Category_is_unavailable_when_the_category_key_is_unmapped()
+    {
+        var map = Map();
+        map.Product!.CategoryKey = null;
+        var result = Evaluate(map, isProduction: false, hasSync: true);
+
+        Assert.Equal(MetricAvailability.SourceItemUnmapped, result[MetricAvailability.FigureCategory]);
+    }
+
+    [Fact]
+    public void Category_is_unavailable_when_the_category_name_or_key_is_unverified()
+    {
+        var map = Map();
+        map.ProductCategory!.Name!.Status = "unknown";
+        var result = Evaluate(map, isProduction: false, hasSync: true);
+
+        Assert.Equal(MetricAvailability.SourceItemUnverified, result[MetricAvailability.FigureCategory]);
+    }
+
+    [Fact]
+    public void Category_is_also_unavailable_when_topProducts_is_unavailable()
+    {
+        var map = Map();
+        map.PurchaseLine!.ProductKey = null;
+        var result = Evaluate(map, isProduction: false, hasSync: true);
+
+        Assert.Equal(MetricAvailability.SourceItemUnmapped, result[MetricAvailability.FigureTopProducts]);
+        Assert.Equal(MetricAvailability.SourceItemUnmapped, result[MetricAvailability.FigureCategory]);
+        Assert.Equal(MetricAvailability.SourceItemUnmapped, result[MetricAvailability.FigureProductReport]);
+    }
+
+    [Fact]
+    public void Quantity_column_unmapped_makes_quantity_unmapped_only()
+    {
+        var map = Map();
+        map.PurchaseLine!.Quantity = null;
+        var result = Evaluate(map, isProduction: false, hasSync: true);
+
+        Assert.Equal(MetricAvailability.SourceItemUnmapped, result[MetricAvailability.FigureQuantity]);
+        Assert.Null(result[MetricAvailability.FigureNet]);
+        Assert.Null(result[MetricAvailability.FigureVendorReport]);
+    }
+
+    [Fact]
+    public void Quantity_with_candidate_status_is_unverified_in_production()
+    {
+        var result = Evaluate(Map(), isProduction: true, hasSync: true);
+
+        Assert.Equal(MetricAvailability.SourceItemUnverified, result[MetricAvailability.FigureQuantity]);
+    }
+
+    [Fact]
+    public void VendorReport_mirrors_the_topVendors_reason()
+    {
+        var map = Map();
+        map.PurchaseInvoice!.VendorKey = null;
+        var result = Evaluate(map, isProduction: false, hasSync: true);
+
+        Assert.Equal(result[MetricAvailability.FigureTopVendors], result[MetricAvailability.FigureVendorReport]);
+        Assert.Equal(MetricAvailability.SourceItemUnmapped, result[MetricAvailability.FigureVendorReport]);
+    }
+
+    [Fact]
+    public void ProductReport_mirrors_the_topProducts_reason()
+    {
+        var map = Map();
+        map.PurchaseLine!.ProductKey = null;
+        var result = Evaluate(map, isProduction: false, hasSync: true);
+
+        Assert.Equal(result[MetricAvailability.FigureTopProducts], result[MetricAvailability.FigureProductReport]);
+        Assert.Equal(MetricAvailability.SourceItemUnmapped, result[MetricAvailability.FigureProductReport]);
+    }
+
+    [Fact]
+    public void ReturnsReport_depends_on_the_return_reason_or_the_vendor_or_product_key()
+    {
+        var returnReason = Map();
+        returnReason.PurchaseReturn!.Key!.Status = "unknown";
+        Assert.Equal(
+            MetricAvailability.SourceItemUnverified,
+            Evaluate(returnReason, isProduction: false, hasSync: true)[MetricAvailability.FigureReturnsReport]);
+
+        var vendorKey = Map();
+        vendorKey.PurchaseReturn!.VendorKey = null;
+        Assert.Equal(
+            MetricAvailability.SourceItemUnmapped,
+            Evaluate(vendorKey, isProduction: false, hasSync: true)[MetricAvailability.FigureReturnsReport]);
+
+        var productKey = Map();
+        productKey.PurchaseLine!.ProductKey = null;
+        Assert.Equal(
+            MetricAvailability.SourceItemUnmapped,
+            Evaluate(productKey, isProduction: false, hasSync: true)[MetricAvailability.FigureReturnsReport]);
+
+        Assert.Null(Evaluate(Map(), isProduction: false, hasSync: true)[MetricAvailability.FigureReturnsReport]);
+    }
+
+    [Fact]
+    public void Transactions_mirrors_the_net_reason()
+    {
+        var map = Map();
+        map.PurchaseInvoice!.Date!.Status = "unknown";
+        var result = Evaluate(map, isProduction: false, hasSync: true);
+
+        Assert.Equal(result[MetricAvailability.FigureNet], result[MetricAvailability.FigureTransactions]);
+        Assert.Equal(MetricAvailability.SourceItemUnverified, result[MetricAvailability.FigureTransactions]);
     }
 }

@@ -214,6 +214,7 @@ public static class SourceMapValidator
         yield return ("purchaseInvoice", map.PurchaseInvoice);
         yield return ("purchaseReturn", map.PurchaseReturn);
         yield return ("purchaseLine", map.PurchaseLine);
+        yield return ("productCategory", map.ProductCategory);
     }
 
     private static IEnumerable<(string Name, SourceMapField? Field)> NamedFields(SourceMapEntity entity)
@@ -229,6 +230,8 @@ public static class SourceMapValidator
         yield return ("quantity", entity.Quantity);
         yield return ("lineDiscount", entity.LineDiscount);
         yield return ("vat", entity.Vat);
+        yield return ("code", entity.Code);
+        yield return ("categoryKey", entity.CategoryKey);
         yield return ("date", entity.Date);
         yield return ("grossAmount", entity.GrossAmount);
         foreach (var filter in entity.Filter)

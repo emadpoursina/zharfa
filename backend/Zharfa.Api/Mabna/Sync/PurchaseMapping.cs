@@ -56,11 +56,18 @@ public sealed class PurchaseMapping
         ArgumentNullException.ThrowIfNull(map);
         IsProduction = isProduction;
 
-        Vendor = BuildMaster(map.Vendor, "vendor");
-        Product = BuildMaster(map.Product, "product");
+        // Phase 2 optional items: each is used only when usable; otherwise its figure is unavailable.
+        // They are resolved before the masters so that their columns join the master read lists.
+        VendorCode = UsableColumn(map.Vendor?.Code);
+        ProductCategoryKey = UsableColumn(map.Product?.CategoryKey);
+
+        Vendor = BuildMaster(map.Vendor, "vendor", VendorCode);
+        Product = BuildMaster(map.Product, "product", ProductCategoryKey);
         Invoice = BuildDocument(map.PurchaseInvoice, "purchaseInvoice");
         Return = BuildDocument(map.PurchaseReturn, "purchaseReturn");
         Line = BuildLine(map.PurchaseLine);
+
+        ProductCategory = BuildOptionalCategory(map.ProductCategory);
     }
 
     public bool IsProduction { get; }
@@ -75,11 +82,48 @@ public sealed class PurchaseMapping
 
     public LineSource Line { get; }
 
+    /// <summary>Usable vendor code column (Phase 2), or null when not usable.</summary>
+    public string? VendorCode { get; }
+
+    /// <summary>Usable product drug group key column (Phase 2), or null when not usable.</summary>
+    public string? ProductCategoryKey { get; }
+
+    /// <summary>Usable product category master (Phase 2), or null when absent or not usable.</summary>
+    public MasterSource? ProductCategory { get; }
+
     /// <summary>Usable column name of a field, or null when the field is absent or not usable.</summary>
     public string? UsableColumn(SourceMapField? field) =>
         SourceMap.IsUsable(field, IsProduction) ? field!.Column : null;
 
-    private MasterSource BuildMaster(SourceMapEntity? entity, string name)
+    private MasterSource? BuildOptionalCategory(SourceMapEntity? entity)
+    {
+        if (entity is null || !SourceMap.IsUsable(entity, IsProduction) ||
+            entity.Filter.Any(filter => !SourceMap.IsStatusUsable(filter.Status, IsProduction)))
+        {
+            return null;
+        }
+
+        var key = UsableColumn(entity.Key);
+        var name = UsableColumn(entity.Name);
+        if (key is null || name is null)
+        {
+            return null;
+        }
+
+        var change = BuildChange(entity);
+        return new MasterSource(
+            entity.Object!,
+            key,
+            name,
+            null,
+            BuildFilters(entity, "productCategory"),
+            change,
+            Distinct(key, name, ChangeColumnFor(change)));
+    }
+
+    /// <param name="optionalColumn">Phase 2 optional column (vendor code or product drug group key), or null when not usable.
+    /// It joins the read list so the row mapper receives it; a missing optional column never fails the read.</param>
+    private MasterSource BuildMaster(SourceMapEntity? entity, string name, string? optionalColumn)
     {
         RequireUsable(entity, name);
         var key = Require(UsableColumn(entity!.Key), name, "key");
@@ -94,7 +138,7 @@ public sealed class PurchaseMapping
             active,
             filters,
             change,
-            Distinct(key, label, active, ChangeColumnFor(change)));
+            Distinct(key, label, active, ChangeColumnFor(change), optionalColumn));
     }
 
     private DocumentSource BuildDocument(SourceMapEntity? entity, string name)

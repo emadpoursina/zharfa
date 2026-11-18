@@ -2,6 +2,7 @@ namespace Zharfa.Api.Tests.Sync;
 
 using System.Buffers;
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using Zharfa.Api.Mabna;
 using Zharfa.Api.Mabna.Sync;
 
@@ -416,5 +417,129 @@ public class SourceMapValidationTests
         Assert.Empty(SourceMapValidator.Validate(result.Map, ExamplePolicy()));
         Assert.Equal("idWatermark", result.Map!.PurchaseInvoice!.Change!.Strategy);
         Assert.Equal("DocID", result.Map.PurchaseInvoice.Change.Column);
+    }
+
+    // ---- spec 004 (Phase 2): vendor code, product category key, productCategory master (T009) ----
+
+    // SourceMap's entity properties have private setters, so these tests edit the example
+    // JSON in memory and reparse it (the same route as the retired-lookbackDays test below).
+
+    /// <summary>Loads the example map after applying an in-memory edit to its JSON; never throws on a valid map.</summary>
+    private static SourceMap LoadExampleWith(Action<JsonObject> edit)
+    {
+        var root = JsonNode.Parse(File.ReadAllText(ExampleMapPath))!.AsObject();
+        edit(root);
+        var result = SourceMap.Parse(root.ToJsonString());
+        Assert.True(result.IsValid, string.Join("; ", result.Problems.Select(p => p.Code)));
+        return result.Map!;
+    }
+
+    /// <summary>Sets (or, with null, removes) the optional productCategory entity in the example JSON.</summary>
+    private static void SetProductCategory(JsonObject root, JsonObject? entity)
+    {
+        var entities = root["entities"]!.AsObject();
+        entities.Remove("productCategory");
+        if (entity is not null)
+        {
+            entities["productCategory"] = entity;
+        }
+    }
+
+    private static JsonObject DrugGroupEntity(string obj = "dbo.SimDrugGroup") => new()
+    {
+        ["object"] = obj,
+        ["kind"] = "table",
+        ["hostFiltered"] = false,
+        ["status"] = "candidate",
+        ["key"] = new JsonObject { ["column"] = "DrugGroupID", ["status"] = "candidate" },
+        ["name"] = new JsonObject { ["column"] = "DrugGroupName", ["status"] = "candidate" },
+        ["change"] = new JsonObject { ["strategy"] = "full" },
+    };
+
+    [Fact]
+    public void Phase1_map_without_the_phase2_items_still_loads_and_validates()
+    {
+        var map = LoadExampleWith(root => SetProductCategory(root, null));
+        map.Vendor!.Code = null;
+        map.Product!.CategoryKey = null;
+
+        Assert.Empty(SourceMapValidator.Validate(map, ExamplePolicy()));
+    }
+
+    [Fact]
+    public void Product_categoryKey_without_productCategory_is_not_an_error()
+    {
+        var map = LoadExampleWith(root => SetProductCategory(root, null));
+        map.Product!.CategoryKey = new SourceMapField { Column = "SimDrugGroupID", Status = "candidate" };
+
+        Assert.Empty(SourceMapValidator.Validate(map, ExamplePolicy()));
+    }
+
+    [Fact]
+    public void Product_category_entity_must_be_on_the_allowlist()
+    {
+        var entity = DrugGroupEntity("dbo.SimNotListed");
+        var map = LoadExampleWith(root => SetProductCategory(root, entity));
+
+        var problems = SourceMapValidator.Validate(map, ExamplePolicy());
+
+        Assert.Contains(problems, p => p.Code == "object-not-allowlisted");
+    }
+
+    [Fact]
+    public void Product_category_entity_with_host_filtered_true_is_rejected()
+    {
+        var entity = DrugGroupEntity();
+        entity["hostFiltered"] = true;
+        var map = LoadExampleWith(root => SetProductCategory(root, entity));
+
+        var problems = SourceMapValidator.Validate(map, ExamplePolicy());
+
+        Assert.Contains(problems, p => p.Code == "host-filtered");
+    }
+
+    [Fact]
+    public void Product_category_key_with_an_invalid_identifier_is_rejected()
+    {
+        var entity = DrugGroupEntity();
+        entity["key"]!["column"] = "Drug Group; DROP";
+        var map = LoadExampleWith(root => SetProductCategory(root, entity));
+
+        var problems = SourceMapValidator.Validate(map, ExamplePolicy());
+
+        Assert.Contains(problems, p => p.Code == "column-invalid");
+    }
+
+    [Fact]
+    public void Product_category_with_an_unknown_change_strategy_is_rejected()
+    {
+        var entity = DrugGroupEntity();
+        entity["change"]!["strategy"] = "lookbackDays";
+        var map = LoadExampleWith(root => SetProductCategory(root, entity));
+
+        var problems = SourceMapValidator.Validate(map, ExamplePolicy());
+
+        Assert.Contains(problems, p => p.Code == "change-strategy-invalid");
+    }
+
+    [Fact]
+    public void Vendor_code_with_an_invalid_identifier_is_rejected()
+    {
+        var map = LoadExample();
+        map.Vendor!.Code = new SourceMapField { Column = "Code; DROP", Status = "candidate" };
+
+        var problems = SourceMapValidator.Validate(map, ExamplePolicy());
+
+        Assert.Contains(problems, p => p.Code == "column-invalid");
+    }
+
+    [Fact]
+    public void Product_category_key_column_with_a_valid_identifier_passes()
+    {
+        var entity = DrugGroupEntity();
+        var map = LoadExampleWith(root => SetProductCategory(root, entity));
+        map.Product!.CategoryKey = new SourceMapField { Column = "SimDrugGroupID", Status = "candidate" };
+
+        Assert.Empty(SourceMapValidator.Validate(map, ExamplePolicy()));
     }
 }

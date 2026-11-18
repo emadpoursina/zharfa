@@ -106,3 +106,13 @@ Status vocabulary: `unknown` (not checked) | `candidate` (off-site candidate, un
 - [ ] **Dev** Mabna's report views that filter on `HOST_ID()` are never read: every entity in the map sets `hostFiltered: false` and none of those views is on the allowlist. Pass: grep of the map and allowlist finds none.
 - [ ] **Dev** Copy the logical statuses and the verification date into `specs/003-real-purchase-data/source-verification.md`, and the on-site reconciliation pass or fail (no amounts). Pass: the file holds logical item names only; no real names and no rows.
 - [ ] **Dev** Nothing from this section is committed. Pass: `git status` clean (section 6).
+
+### 7.6 Phase 2 items
+
+Release 1 Phase 2 (spec 004, `specs/004-vendor-purchasing-reports/`). Run with 7.1–7.5 on the same visit. Same rules: catalog metadata only, owner-approved aggregates only, statuses recorded in the gitignored map and, as logical names only, in `specs/003-real-purchase-data/source-verification.md` (items 40–46).
+
+- [ ] **Dev** Item 40, vendor code shown to users: identify the column by catalog metadata and confirm with the owner which code users see. Pass: the column is mapped as `vendor.code` (`candidate` until confirmed); no code value is copied into the repository.
+- [ ] **Dev** Item 41, product drug group key: identify the product column that holds the group key. Pass: identified by catalog metadata; nullability recorded (NULL means uncategorized).
+- [ ] **Dev** Items 42–45, drug group master: object, key column, name column and change marker. Pass: each identified by catalog metadata; the key is unique (owner-approved duplicate-count aggregate). The object joins the live allowlist only once its items are `confirmed` or `corrected`; until then the category figures stay unavailable.
+- [ ] **Dev** Item 46, drug class second level: recorded as `unknown`. Not built in Phase 2; no check is run.
+- [ ] **Dev** The views that filter on `HOST_ID()` are never read for these items either, and none of them is added to the allowlist. Pass: grep of the map and allowlist finds none.

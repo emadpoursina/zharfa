@@ -1,5 +1,19 @@
 # Changelog
 
+## [Unreleased] - Zharfa Release 1, Phase 2: Vendor and Purchasing Reports
+### Added
+- Vendor directory and vendor profile for Managers and Admins: net purchases, last purchase date, search by vendor name or code, a 12-month trend, top products, returns and the documents of one vendor.
+- Seven purchasing reports (by vendor, by product, by category, monthly trend, top products, returns, transaction history) with period and previous-period comparison, sorting, paging and the filters each report declares.
+- Drill-down from any report row to its documents and their lines, and a vendor comparison of two to five vendors.
+- Print view for each report, directory, profile and comparison, limited to 1,000 rows.
+- Migration `db/migrations/0007_purchasing_reports.sql`: drug group master (`mabna.product_category`), vendor code, product drug group key, search keys, the `mabna.fn_purchase_lines` range base, and the extended sync fingerprint.
+- Source map items 40–46 (vendor code, product drug group key, drug group master) as candidates for on-site verification, recorded in `specs/003-real-purchase-data/source-verification.md` and `specs/002-mabna-accounting-connector/onsite-checklist.md` §7.6.
+- Synthetic three-year load generator fills the drug groups, vendor codes and product categories (`db/perf/purchasing-3y.sql`).
+### Changed
+- `mabna.fn_purchase_line_amounts` is now a wrapper over `mabna.fn_purchase_lines`; Phase 1 Overview figures are unchanged.
+- Metric definitions for the reports are in `docs/metrics/purchasing.md` ("Reports").
+- Reports never show payments, vendor balance, credit, price differences or profit.
+
 ## [Unreleased] - Zharfa Release 1, Phase 1: Real Purchase Data
 ### Added
 - Install data mode `ZHARFA_DATA_MODE` (required, `production` or `demo`). Production shows real Mabna purchasing data only and hides the demo pages and the AI chat; demo labels all data as demonstration data.

@@ -110,6 +110,8 @@ export interface SystemModules {
   dataSync: boolean;
   demoPages: boolean;
   ai: boolean;
+  /** Purchasing reports, vendor directory and comparison (spec 004): navigation only; the server enforces roles. */
+  purchasingReports: boolean;
 }
 
 export interface SystemStatus {
@@ -243,4 +245,258 @@ export function getSyncJob(id: number): Promise<SyncJob> {
 /** POST /api/admin/sync/run (Admin only): 202 started, 409 already running, 503 cannot start. */
 export function runSyncNow(): Promise<{ job: SyncJob }> {
   return apiPost<{ job: SyncJob }>('/api/admin/sync/run');
+}
+
+// ---------------------------------------------------------------------------
+// Vendor and purchasing reports (spec 004, contracts/api.md). Same conventions:
+// exact decimal strings in Rial, null = unavailable (listed in `unavailable`),
+// no balance, payment, credit, debt or paid field exists anywhere (FR-012).
+// ---------------------------------------------------------------------------
+
+export type PeriodKind = 'month' | 'quarter' | 'year' | 'custom';
+
+export interface ReportPeriod {
+  kind: PeriodKind;
+  /** Jalali YYYY-MM-DD, inclusive. */
+  from: string;
+  to: string;
+  label: string;
+  /** Set when the requested range runs past today. */
+  trimmedTo: string | null;
+}
+
+export interface ReportFilterEcho {
+  name: string;
+  value: string;
+  label: string;
+}
+
+export interface ReportUnavailable {
+  figure: string;
+  reason: string;
+}
+
+/** The envelope every data response carries (contracts/api.md §0). */
+export interface ReportEnvelope {
+  dataLabel: DataLabel;
+  lastSuccessfulSync: LastSuccessfulSync | null;
+  currency: string;
+  currencyLabel: string;
+  discountBasis: string;
+  period: ReportPeriod;
+  /** Present only with compare=true (always on the profile). */
+  previousPeriod?: ReportPeriod | null;
+  filters: ReportFilterEcho[];
+  unavailable: ReportUnavailable[];
+}
+
+/** Totals over the full filtered result (never the page). Absent fields are not used by the report. */
+export interface ReportTotals {
+  net?: string;
+  gross?: string;
+  returns?: string;
+  vat?: string;
+  vatInvoice?: string;
+  vatReturn?: string;
+  netQuantity?: string;
+  invoiceAmount?: string;
+  returnAmount?: string;
+  preDiscount?: string;
+  discount?: string;
+  documentCount?: number;
+  lineCount?: number;
+  quantityMissingLines?: number;
+}
+
+export interface ReportDrill {
+  vendor?: string;
+  product?: string;
+  category?: string;
+  month?: string;
+  match?: string;
+  docType?: 'invoice' | 'return';
+}
+
+export interface GroupedRow {
+  key: string | null;
+  name: string;
+  code: string | null;
+  unknown: boolean;
+  net: string | null;
+  gross: string | null;
+  returns: string | null;
+  vat: string | null;
+  netQuantity: string | null;
+  documentCount: number;
+  previousNet?: string | null;
+  delta?: string | null;
+  percent?: string | null;
+  rank?: number | null;
+  drill: ReportDrill;
+}
+
+export interface TrendRow {
+  month: string;
+  label: string;
+  net: string | null;
+  netQuantity: string | null;
+  available: boolean;
+  partial: boolean;
+  previousNet?: string | null;
+  delta?: string | null;
+  percent?: string | null;
+  drill: ReportDrill;
+}
+
+export interface ReturnsRow {
+  vendorKey: string | null;
+  vendorName: string;
+  productKey: string | null;
+  productName: string;
+  unknownVendor: boolean;
+  unknownProduct: boolean;
+  returns: string | null;
+  quantity: string | null;
+  documentCount: number;
+  previousReturns?: string | null;
+  delta?: string | null;
+  percent?: string | null;
+  drill: ReportDrill;
+}
+
+export interface DocumentRow {
+  documentId: number;
+  number: string;
+  docType: 'invoice' | 'return';
+  docTypeLabel: string;
+  date: string;
+  dateJalali: string;
+  vendorKey: string | null;
+  vendorName: string;
+  preDiscount: string;
+  discount: string;
+  vat: string;
+  net: string;
+  signedNet: string;
+  quantity: string;
+  lineCount: number;
+}
+
+export interface LineRow {
+  lineId: number;
+  productKey: string | null;
+  productName: string;
+  categoryName: string | null;
+  unknownProduct: boolean;
+  quantity: string | null;
+  preDiscount: string;
+  discount: string;
+  lineAmount: string;
+  vat: string;
+  signedAmount: string;
+}
+
+/** A table response: the envelope, paging, totals over every filtered row and the rows of the page. */
+export interface ReportTable<TRow> extends ReportEnvelope {
+  /** Effective page after clamping to the last page. */
+  page: number;
+  pageSize: number;
+  totalRows: number;
+  sort: string;
+  dir: 'asc' | 'desc';
+  totals: ReportTotals;
+  previousTotals?: ReportTotals | null;
+  rows: TRow[];
+}
+
+/** The print twin: envelope, totals and at most 1,000 rows in the current sort. */
+export interface ReportPrint<TRow> extends ReportEnvelope {
+  totalRows: number;
+  truncated: boolean;
+  limit: number;
+  totals: ReportTotals;
+  previousTotals?: ReportTotals | null;
+  rows: TRow[];
+}
+
+export interface VendorRow {
+  key: string;
+  name: string;
+  code: string | null;
+  /** "0.0000" for a vendor without purchases; null only when unavailable. */
+  net: string | null;
+  lastPurchaseDate: string | null;
+  lastPurchaseDateJalali: string | null;
+  previousNet?: string | null;
+  delta?: string | null;
+  percent?: string | null;
+}
+
+export interface LookupItem {
+  key: string | null;
+  name: string;
+  code: string | null;
+}
+
+export interface LookupResponse {
+  items: LookupItem[];
+  unavailable?: ReportUnavailable[];
+}
+
+export interface ProfileTrendPoint {
+  month: string;
+  net: string | null;
+  available: boolean;
+  partial: boolean;
+}
+
+export interface VendorProfile extends ReportEnvelope {
+  vendor: { key: string; name: string; code: string | null };
+  totals: ReportTotals;
+  comparison: { previousNet: string; delta: string; percent: string | null } | null;
+  trend: ProfileTrendPoint[];
+  topProducts: Array<{ key: string | null; name: string; net: string | null; netQuantity: string | null; unknown: boolean }>;
+  returns: Array<{ productKey: string | null; productName: string; returns: string | null; quantity: string | null; unknown: boolean }>;
+  documents: { page: number; pageSize: number; totalRows: number; rows: DocumentRow[] };
+}
+
+export interface DocumentLines extends Omit<ReportEnvelope, 'period' | 'previousPeriod'> {
+  document: DocumentRow;
+  lines: LineRow[];
+  totals: { lineAmount: string; signedAmount: string; quantity: string };
+}
+
+export interface VendorComparisonVendor {
+  key: string;
+  name: string;
+  code: string | null;
+  net: string | null;
+  netQuantity: string | null;
+  documentCount: number | null;
+  returns: string | null;
+  trend: ProfileTrendPoint[];
+}
+
+export interface VendorComparison extends Omit<ReportEnvelope, 'previousPeriod'> {
+  months: string[];
+  vendors: VendorComparisonVendor[];
+  truncated?: boolean;
+  limit?: number;
+}
+
+export type PurchasingQueryValue = string | number | boolean | null | undefined;
+
+/**
+ * GET /api/purchasing/{path} (Manager, Admin). `params` keys with empty values are omitted, so each screen sends only
+ * the parameters its report declares. 400/404/503 surface the server's Persian `message`.
+ */
+export function getPurchasing<T>(path: string, params: Record<string, PurchasingQueryValue> = {}): Promise<T> {
+  const search = new URLSearchParams();
+  for (const [name, value] of Object.entries(params)) {
+    if (value !== undefined && value !== null && value !== '') {
+      search.set(name, String(value));
+    }
+  }
+  const query = search.toString();
+  return apiGet<T>(`/api/purchasing/${path}${query ? `?${query}` : ''}`);
 }

@@ -11,6 +11,8 @@ import { jalaliMonthKeyLabel } from '../utils/jalali';
 interface OverviewPurchasingProps {
   /** Server's Jalali date today («YYYY-MM-DD»), from GET /api/system/status. */
   serverJalaliToday: string;
+  /** Opens a vendor's profile for the Overview's month (spec 004 T048). */
+  onOpenVendor?: (vendor: { key: string; name: string }, month: string) => void;
 }
 
 const UNAVAILABLE_TEXT = 'داده در دسترس نیست';
@@ -67,7 +69,7 @@ function comparisonView(overview: PurchasingOverview): KpiComparisonView | null 
  * Manager's Overview of real purchasing (spec 003 US5, FR-025..FR-029). Every figure is computed on the
  * server and only rendered here. Changing the Jalali month refetches the whole Overview.
  */
-export function OverviewPurchasing({ serverJalaliToday }: OverviewPurchasingProps) {
+export function OverviewPurchasing({ serverJalaliToday, onOpenVendor }: OverviewPurchasingProps) {
   const [month, setMonth] = useState(() => monthKeyOf(serverJalaliToday));
   const [overview, setOverview] = useState<PurchasingOverview | null>(null);
   const [loading, setLoading] = useState(true);
@@ -182,7 +184,17 @@ export function OverviewPurchasing({ serverJalaliToday }: OverviewPurchasingProp
           </div>
 
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-            <TopList title="پنج تأمین‌کننده برتر بر اساس خرید خالص" items={overview.topVendors} />
+            <TopList
+              title="پنج تأمین‌کننده برتر بر اساس خرید خالص"
+              items={overview.topVendors}
+              onSelect={
+                onOpenVendor
+                  ? (item) => {
+                      if (item.key !== null) onOpenVendor({ key: item.key, name: item.name }, month);
+                    }
+                  : undefined
+              }
+            />
             <TopList title="پنج کالای برتر بر اساس خرید خالص" items={overview.topProducts} />
           </div>
         </div>
