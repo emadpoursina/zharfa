@@ -132,6 +132,17 @@ export async function apiPost<T>(path: string, body?: unknown): Promise<T> {
   return handleResponse<T>(res);
 }
 
+export async function apiDelete<T = void>(path: string): Promise<T> {
+  const res = await fetch(path, {
+    method: 'DELETE',
+    credentials: 'same-origin',
+    headers: {
+      Accept: 'application/json',
+    },
+  });
+  return handleResponse<T>(res);
+}
+
 // ---------------------------------------------------------------------------
 // Real purchase data (spec 003, contracts/api.md). Amounts are strings with up
 // to 4 decimals in Rial (exact, never float). An unavailable figure is null and
@@ -163,6 +174,8 @@ export interface SystemModules {
   dataQuality: boolean;
   /** AI provider settings page (admin permission): navigation only. */
   aiSettings: boolean;
+  /** Saved reports page (purchasing.reports permission, spec 007). */
+  savedReports: boolean;
 }
 
 export interface SystemStatus {
@@ -796,6 +809,69 @@ export interface PurchasingFilters {
   category: string | null;
 }
 
+export interface VisualColumn {
+  id: string;
+  header: string;
+}
+
+export interface VisualCaptions {
+  period: string;
+  filters: string;
+  metrics: string;
+}
+
+export interface VisualChartSeries {
+  metric: string;
+  label: string;
+  values: string[];
+}
+
+export interface VisualChart {
+  type: string;
+  categoryId: string;
+  series: VisualChartSeries[];
+}
+
+export interface VisualTable {
+  columns: VisualColumn[];
+  rows: Record<string, string | null | undefined>[];
+}
+
+export interface SavedReportPeriodSpec {
+  kind: string;
+  from?: string;
+  to?: string;
+  month?: string;
+  quarter?: string;
+  year?: string;
+}
+
+export interface GeneratedToolSpec {
+  tool: string;
+  limit: number;
+  sort: string;
+  dir: string;
+  chart: string;
+  metrics: string[];
+}
+
+export interface VisualSaveSpec {
+  kind: string;
+  period: SavedReportPeriodSpec;
+  filters: Record<string, string | null | undefined>;
+  generated: GeneratedToolSpec;
+}
+
+export interface PurchasingVisual {
+  kind: string;
+  captions: VisualCaptions;
+  table: VisualTable;
+  chart?: VisualChart | null;
+  dataQuality?: DataQualityNotice | null;
+  saveSpec: VisualSaveSpec;
+  dataLabel?: DataLabel;
+}
+
 export interface PurchasingChatResponse {
   answer: string;
   period: PurchasingPeriod;
@@ -806,6 +882,7 @@ export interface PurchasingChatResponse {
   unavailable: boolean;
   dataLabel: DataLabel;
   demoNotice?: string | null;
+  visual?: PurchasingVisual | null;
 }
 
 export interface PurchasingChatUnavailableResponse {
@@ -858,4 +935,162 @@ export function testAiProvider(target: 'local' | 'cloud'): Promise<AiTestRespons
 
 export function setAiCloud(enabled: boolean, ownerApprovalNote?: string): Promise<AiSettingsResponse> {
   return apiPost<AiSettingsResponse>('/api/admin/ai/cloud', { enabled, ownerApprovalNote });
+}
+
+// ---------------------------------------------------------------------------
+// Saved Reports (spec 007, contracts/api.md §2)
+// ---------------------------------------------------------------------------
+
+export interface SavedReportItem {
+  id: number;
+  name: string;
+  kind: string;
+  kindLabel: string;
+  requiredPermission: string;
+  period: Record<string, unknown>;
+  filters: unknown[];
+  updatedAtJalali: string;
+}
+
+export interface SavedReportListResponse {
+  dataLabel: DataLabel;
+  max: number;
+  items: SavedReportItem[];
+}
+
+export interface SaveReportRequest {
+  name: string;
+  kind: string;
+  period: unknown;
+  filters?: unknown;
+  generated?: unknown;
+  overwrite?: boolean;
+}
+
+export interface SavedReportOpenResponse {
+  data?: unknown;
+  saved: {
+    id: number;
+    name: string;
+    kind: string;
+  };
+  period?: PurchasingPeriod;
+  filters?: PurchasingFilters;
+  view?: string | null;
+  visual?: PurchasingVisual;
+  dataLabel?: DataLabel;
+  unavailable?: boolean;
+}
+
+export function getSavedReports(): Promise<SavedReportListResponse> {
+  return apiGet<SavedReportListResponse>('/api/saved-reports');
+}
+
+export function getSavedReport(id: number): Promise<SavedReportItem> {
+  return apiGet<SavedReportItem>(`/api/saved-reports/${id}`);
+}
+
+export function saveReport(req: SaveReportRequest): Promise<SavedReportItem> {
+  return apiPost<SavedReportItem>('/api/saved-reports', req);
+}
+
+export function openSavedReport(id: number): Promise<SavedReportOpenResponse> {
+  return apiPost<SavedReportOpenResponse>(`/api/saved-reports/${id}/open`, {});
+}
+
+export function deleteSavedReport(id: number): Promise<void> {
+  return apiDelete<void>(`/api/saved-reports/${id}`);
+}
+
+// ---------------------------------------------------------------------------
+// Excel Export helpers (spec 007 FR-014..FR-019)
+// ---------------------------------------------------------------------------
+
+/**
+ * Triggers a file download from an authenticated GET/POST endpoint (spec 007 FR-014).
+ * Uses credentials/cookie, parses filename from Content-Disposition header (RFC 5987 / UTF-8),
+ * creates a temporary object URL and clicks it.
+ */
+export async function downloadFile(url: string, body?: unknown, method: 'GET' | 'POST' = 'GET'): Promise<void> {
+  const options: RequestInit = {
+    method,
+    credentials: 'same-origin',
+  };
+
+  if (method === 'POST') {
+    options.headers = {
+      'Content-Type': 'application/json',
+    };
+    if (body !== undefined) {
+      options.body = JSON.stringify(body);
+    }
+  }
+
+  const res = await fetch(url, options);
+
+  if (!res.ok) {
+    let errorMessage = 'خطا در دریافت فایل اکسل.';
+    try {
+      const json = await res.json();
+      if (typeof json === 'object' && json !== null && typeof (json as { message?: string }).message === 'string') {
+        errorMessage = (json as { message: string }).message;
+      }
+    } catch {
+      // ignore
+    }
+    const refusal = new ApiError(res.status, errorMessage);
+    announceRefusal(refusal);
+    throw refusal;
+  }
+
+  let filename = 'گزارش.xlsx';
+  const disposition = res.headers.get('content-disposition');
+  if (disposition) {
+    const utf8Match = disposition.match(/filename\*=UTF-8''([^;]+)/i);
+    if (utf8Match?.[1]) {
+      try {
+        filename = decodeURIComponent(utf8Match[1]);
+      } catch {
+        filename = utf8Match[1];
+      }
+    } else {
+      const match = disposition.match(/filename="?([^";]+)"?/i);
+      if (match?.[1]) {
+        filename = match[1];
+      }
+    }
+  }
+
+  const blob = await res.blob();
+  const objectUrl = window.URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = objectUrl;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  setTimeout(() => {
+    document.body.removeChild(a);
+    window.URL.revokeObjectURL(objectUrl);
+  }, 100);
+}
+
+export function downloadReportExport(path: string, params?: Record<string, PurchasingQueryValue>): Promise<void> {
+  const search = new URLSearchParams();
+  if (params) {
+    for (const [name, value] of Object.entries(params)) {
+      if (value !== undefined && value !== null && value !== '') {
+        search.set(name, String(value));
+      }
+    }
+  }
+  const query = search.toString();
+  return downloadFile(`/api/purchasing/${path}/export${query ? `?${query}` : ''}`, undefined, 'GET');
+}
+
+export function downloadAiVisualExport(saveSpec: unknown): Promise<void> {
+  return downloadFile('/api/ai/visual/export', saveSpec, 'POST');
+}
+
+export function downloadSavedReportExport(id: number): Promise<void> {
+  return downloadFile(`/api/saved-reports/${id}/export`, undefined, 'GET');
 }

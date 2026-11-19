@@ -6,14 +6,18 @@ using System.Diagnostics;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
+using System.Text.Json;
 using System.Text.Json.Serialization;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 using Zharfa.Api.Ai;
+using Zharfa.Api.Analytics;
 using Zharfa.Api.Audit;
 using Zharfa.Api.Data;
+using Zharfa.Api.Mabna.Sync;
 using Zharfa.Api.Platform;
 using Zharfa.Api.Purchasing.Reports;
 using Zharfa.Api.Security;
@@ -33,7 +37,8 @@ public record PurchasingChatResponse(
     string Interpretation,
     bool Unavailable,
     string DataLabel,
-    string? DemoNotice = null);
+    string? DemoNotice = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] VisualDto? Visual = null);
 
 public record PurchasingChatUnavailableResponse(
     bool Unavailable,
@@ -57,7 +62,10 @@ public class AiController(
     AiQuestionGate questionGate,
     IAuditLogger auditLogger,
     DataModeOptions dataMode,
-    ILogger<AiController> logger) : ControllerBase
+    ILogger<AiController> logger,
+    ExcelExportService? exportService = null,
+    IOptions<SyncOptions>? syncOptions = null,
+    TimeProvider? clock = null) : ControllerBase
 {
     private const string PurchasingSystemPrompt =
         "شما تحلیل‌گر هوشمند خرید در شرکت پخش دارویی «ژرفا» هستید.\n" +
@@ -264,6 +272,13 @@ public class AiController(
                 toolResult.View,
                 modelContent);
 
+            var normQuestion = PurchasingQuestionRouter.Normalize(rawQuestion);
+            VisualDto? visual = null;
+            if (toolResult.Success && VisualIntent.IsListVisual(normQuestion, toolName))
+            {
+                visual = VisualBuilder.Build(normQuestion, toolName, boundPeriod, toolResult, dataMode.DataLabel);
+            }
+
             _ = RecordAuditSafeAsync(rawQuestion, "ok", new[] { toolName }, boundPeriod, toolResult.Vendor, toolResult.Product, toolResult.Category);
 
             return Ok(new PurchasingChatResponse(
@@ -275,7 +290,8 @@ public class AiController(
                 Interpretation: interpretation,
                 Unavailable: false,
                 DataLabel: dataMode.DataLabel,
-                DemoNotice: dataMode.IsDemo ? DemoNoticeText : null));
+                DemoNotice: dataMode.IsDemo ? DemoNoticeText : null,
+                Visual: visual));
         }
         finally
         {
@@ -284,6 +300,102 @@ public class AiController(
                 questionGate.Release(userId.Value);
             }
         }
+    }
+
+    [Authorize(Policy = Permissions.Export)]
+    [HttpPost("visual/export")]
+    public async Task<IActionResult> VisualExport([FromBody] VisualSaveSpec spec, CancellationToken ct)
+    {
+        if (spec.Generated == null || !PurchasingAnalystTools.AllowlistedToolNames.Contains(spec.Generated.Tool))
+        {
+            return BadRequest(new { message = "مشخصات ابزار گزارش نامعتبر است." });
+        }
+
+        var zone = SyncOptions.ResolveTimeZone(syncOptions?.Value.TimeZone ?? "Asia/Tehran");
+        var nowLocal = TimeZoneInfo.ConvertTime((clock ?? TimeProvider.System).GetUtcNow(), zone).DateTime;
+        var today = JalaliDate.FromDateTime(nowLocal);
+
+        JalaliPeriod period;
+        if (spec.Period.Kind == "custom" && !string.IsNullOrWhiteSpace(spec.Period.From) && !string.IsNullOrWhiteSpace(spec.Period.To))
+        {
+            if (!JalaliPeriod.TryParse("custom", null, spec.Period.From, spec.Period.To, today, out var parsed, out _))
+            {
+                return BadRequest(new { message = "بازه زمانی نامعتبر است." });
+            }
+            period = parsed!;
+        }
+        else
+        {
+            string? value = spec.Period.Kind switch
+            {
+                "quarter" => spec.Period.Quarter,
+                "year" => spec.Period.Year,
+                _ => spec.Period.Month
+            };
+            if (!JalaliPeriod.TryParse(spec.Period.Kind, value, null, null, today, out var parsed, out _))
+            {
+                return BadRequest(new { message = "بازه زمانی نامعتبر است." });
+            }
+            period = parsed!;
+        }
+
+        var dict = new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase);
+        if (spec.Filters != null)
+        {
+            foreach (var (k, v) in spec.Filters)
+            {
+                if (v != null) dict[k] = v;
+            }
+        }
+        if (spec.Generated != null)
+        {
+            dict["limit"] = spec.Generated.Limit;
+            if (!string.IsNullOrEmpty(spec.Generated.Sort)) dict["sort"] = spec.Generated.Sort;
+            if (!string.IsNullOrEmpty(spec.Generated.Dir)) dict["dir"] = spec.Generated.Dir;
+        }
+
+        using var argsDoc = JsonDocument.Parse(JsonSerializer.Serialize(dict));
+        var toolResult = await analystTools.DispatchAsync(spec.Generated!.Tool, period, ct, argsDoc.RootElement);
+        if (!toolResult.Success)
+        {
+            return BadRequest(new { message = "جدولی برای خروجی وجود ندارد." });
+        }
+
+        var visual = VisualBuilder.Build(null, spec.Generated.Tool, period, toolResult, dataMode.DataLabel);
+        if (visual == null || visual.Table.Columns.Count == 0)
+        {
+            return BadRequest(new { message = "جدولی برای خروجی وجود ندارد." });
+        }
+
+        var nowJalali = JalaliDate.ToPersianDigits($"{today.Year:D4}/{today.Month:D2}/{today.Day:D2} {nowLocal.Hour:D2}:{nowLocal.Minute:D2}");
+
+        var headers = visual.Table.Columns.Select(c => c.Header).ToList();
+        var rows = visual.Table.Rows
+            .Select(r => (IReadOnlyList<string>)visual.Table.Columns.Select(c => r.GetValueOrDefault(c.Id) ?? "").ToList())
+            .ToList();
+
+        var exportTable = new ExportTable(
+            ReportName: "گزارش تحلیلی دستیار هوشمند",
+            PeriodLabel: visual.Captions.Period,
+            FiltersLabel: visual.Captions.Filters,
+            ExportedAtJalali: nowJalali,
+            LastSyncJalali: null,
+            DataLabel: dataMode.DataLabel,
+            DataQualityText: visual.DataQuality?.AffectedRecords > 0 ? $"توجه کیفیت داده: {visual.DataQuality.AffectedRecords} رکورد پرچم‌دار در این بازه وجود دارد." : null,
+            Headers: headers,
+            Rows: rows,
+            TotalRows: toolResult.TotalRows,
+            Limit: 10000);
+
+        var exporter = exportService ?? new ExcelExportService();
+        var bytes = exporter.BuildWorkbook(exportTable);
+        var filename = exporter.BuildFilename(exportTable.ReportName, today);
+
+        _ = auditLogger.RecordAsync(
+            new AuditEntry(AuditActions.ReportExported, $"report:{ReportKeys.Generated}", AuditDetail.Of(("period", period.Label))),
+            ct);
+
+        return File(bytes, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", filename);
     }
 
     private async Task RecordAuditSafeAsync(

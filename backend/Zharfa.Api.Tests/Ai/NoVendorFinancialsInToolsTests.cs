@@ -84,4 +84,39 @@ public class NoVendorFinancialsInToolsTests
             Assert.False(regex.IsMatch(json), $"JSON contains financial token '{token}' adjacent to digits");
         }
     }
+
+    [Fact]
+    public void Visual_and_export_and_saved_DTO_types_contain_no_vendor_financial_properties()
+    {
+        var types = new[]
+        {
+            typeof(VisualDto),
+            typeof(VisualColumnDto),
+            typeof(VisualCaptionsDto),
+            typeof(VisualChartDto),
+            typeof(VisualTableDto),
+            typeof(VisualSaveSpec),
+            typeof(GeneratedToolSpec),
+            typeof(SavedReportPeriodSpec),
+            typeof(Zharfa.Api.SavedReports.SavedReportItemDto),
+            typeof(Zharfa.Api.SavedReports.SaveReportRequest),
+            typeof(Zharfa.Api.SavedReports.SavedReport),
+            typeof(Zharfa.Api.Purchasing.Reports.ExportTable),
+            typeof(Zharfa.Api.Purchasing.Reports.ExcelExportService)
+        };
+
+        foreach (var type in types)
+        {
+            var props = type.GetProperties(BindingFlags.Public | BindingFlags.Instance | BindingFlags.Static);
+            foreach (var prop in props)
+            {
+                foreach (var token in ForbiddenTokens)
+                {
+                    Assert.False(
+                        prop.Name.Contains(token, StringComparison.OrdinalIgnoreCase),
+                        $"Property '{prop.Name}' in type '{type.Name}' contains forbidden financial token '{token}'");
+                }
+            }
+        }
+    }
 }

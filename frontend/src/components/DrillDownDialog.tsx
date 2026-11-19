@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type KeyboardEvent } from 'react';
 import {
   getPurchasing,
+  downloadReportExport,
   type DocumentLines,
   type DocumentRow,
   type PurchasingQueryValue,
@@ -10,6 +11,7 @@ import {
 import { DataQualityNotice } from './DataQualityNotice';
 import { faQty, faRialFromDecimal } from '../utils/format';
 import { Pager } from './Pager';
+import { SaveReportDialog } from './SaveReportDialog';
 import { ReportStatusLine, ReportTable as Table, type ReportColumn } from './ReportTable';
 import { UnavailableNote } from './UnavailableNote';
 import type { PageSize } from '../hooks/useReportQuery';
@@ -23,6 +25,7 @@ interface DrillDownDialogProps {
   drill: ReportDrill | null;
   onClose: () => void;
   showLink?: boolean;
+  canExport?: boolean;
 }
 
 const FOCUSABLE = 'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex="-1"])';
@@ -43,7 +46,21 @@ function drillParams(drill: ReportDrill): Record<string, PurchasingQueryValue> {
  * the opening control. The list is server-paged; each document expands to its in-scope lines. The dialog states the
  * period and filters it applies.
  */
-export function DrillDownDialog({ open, title, baseParams, drill, onClose, showLink }: DrillDownDialogProps) {
+function drillBaseToCanonicalPeriod(params: Record<string, PurchasingQueryValue>) {
+  const kind = (params.kind as string) || (params.period as string) || 'month';
+  if (kind === 'custom') {
+    return { kind: 'custom', from: String(params.from || ''), to: String(params.to || '') };
+  }
+  if (kind === 'quarter') {
+    return { kind: 'quarter', quarter: String(params.quarter || '') };
+  }
+  if (kind === 'year') {
+    return { kind: 'year', year: String(params.year || '') };
+  }
+  return { kind: 'month', month: String(params.month || '') };
+}
+
+export function DrillDownDialog({ open, title, baseParams, drill, onClose, showLink, canExport }: DrillDownDialogProps) {
   const dialogRef = useRef<HTMLDivElement>(null);
   const openerRef = useRef<HTMLElement | null>(null);
   const [page, setPage] = useState(1);
@@ -54,6 +71,25 @@ export function DrillDownDialog({ open, title, baseParams, drill, onClose, showL
   const [expandedId, setExpandedId] = useState<number | null>(null);
   const [lines, setLines] = useState<DocumentLines | null>(null);
   const [linesError, setLinesError] = useState<string | null>(null);
+  const [saveOpen, setSaveOpen] = useState(false);
+  const [exporting, setExporting] = useState(false);
+  const [exportError, setExportError] = useState<string | null>(null);
+
+  const exportNow = async () => {
+    setExporting(true);
+    setExportError(null);
+    try {
+      const combinedParams = {
+        ...baseParams,
+        ...(drill ? drillParams(drill) : {}),
+      } as Record<string, string>;
+      await downloadReportExport('documents', combinedParams);
+    } catch (caught) {
+      setExportError(caught instanceof Error ? caught.message : 'دریافت خروجی اکسل انجام نشد.');
+    } finally {
+      setExporting(false);
+    }
+  };
 
   // Remember the opener and focus the dialog's first control; restore focus on close.
   useEffect(() => {
@@ -183,14 +219,35 @@ export function DrillDownDialog({ open, title, baseParams, drill, onClose, showL
             </h2>
             <p className="text-sm text-gray-600">اسناد پشت این ردیف، با همان دوره و فیلترهای گزارش</p>
           </div>
-          <button
-            type="button"
-            onClick={onClose}
-            className="rounded-lg border border-gray-300 bg-white px-3 py-1.5 text-sm font-medium text-gray-800 hover:bg-gray-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-600 cursor-pointer"
-          >
-            بستن
-          </button>
+          <div className="flex gap-2">
+            <button
+              type="button"
+              onClick={() => setSaveOpen(true)}
+              disabled={loading || !data}
+              className="rounded-lg border border-gray-300 bg-white px-3 py-1.5 text-sm font-medium text-gray-800 hover:bg-gray-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-600 disabled:opacity-50 cursor-pointer"
+            >
+              ذخیره گزارش
+            </button>
+            {canExport && (
+              <button
+                type="button"
+                onClick={exportNow}
+                disabled={loading || !data || exporting}
+                className="rounded-lg border border-emerald-300 bg-emerald-50 px-3 py-1.5 text-sm font-medium text-emerald-800 hover:bg-emerald-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-600 disabled:opacity-50 cursor-pointer"
+              >
+                {exporting ? 'در حال دریافت...' : 'خروجی اکسل'}
+              </button>
+            )}
+            <button
+              type="button"
+              onClick={onClose}
+              className="rounded-lg border border-gray-300 bg-white px-3 py-1.5 text-sm font-medium text-gray-800 hover:bg-gray-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-600 cursor-pointer"
+            >
+              بستن
+            </button>
+          </div>
         </header>
+        {exportError && <p role="alert" className="text-sm text-red-700 px-1">{exportError}</p>}
 
         <div className="space-y-4 overflow-y-auto">
           {data && <ReportStatusLine envelope={data} />}
@@ -263,6 +320,17 @@ export function DrillDownDialog({ open, title, baseParams, drill, onClose, showL
           )}
         </div>
       </div>
+
+      {saveOpen && (
+        <SaveReportDialog
+          open={saveOpen}
+          kind="drill-down"
+          defaultName={title}
+          period={drillBaseToCanonicalPeriod(baseParams)}
+          filters={drill ? drillParams(drill) : {}}
+          onClose={() => setSaveOpen(false)}
+        />
+      )}
     </div>
   );
 }

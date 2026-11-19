@@ -74,6 +74,20 @@ export function periodParams(period: PeriodValue): Record<string, PurchasingQuer
   }
 }
 
+/** Canonical data-model period object (data-model.md §3) for saving reports. */
+export function canonicalPeriod(period: PeriodValue): { kind: string; month?: string; quarter?: string; year?: string; from?: string; to?: string } {
+  switch (period.kind) {
+    case 'month':
+      return { kind: 'month', month: period.month };
+    case 'quarter':
+      return { kind: 'quarter', quarter: period.quarter };
+    case 'year':
+      return { kind: 'year', year: period.year };
+    case 'custom':
+      return { kind: 'custom', from: period.from, to: period.to };
+  }
+}
+
 export interface ReportQueryOptions {
   /** Path below /api/purchasing, without query, for example `reports/by-vendor` or `vendors`. */
   path: string;

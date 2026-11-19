@@ -135,6 +135,8 @@ builder.Services.AddScoped<PurchasingOverviewService>();
 builder.Services.AddScoped<Zharfa.Api.Purchasing.Reports.PurchasingReportService>();
 builder.Services.AddScoped<Zharfa.Api.Purchasing.Reports.VendorDirectoryService>();
 builder.Services.AddScoped<Zharfa.Api.Purchasing.Reports.VendorComparisonService>();
+builder.Services.AddScoped<Zharfa.Api.Purchasing.Reports.ExcelExportService>();
+builder.Services.AddScoped<Zharfa.Api.SavedReports.SavedReportService>();
 // Users and roles administration (research R4): the admin actions and the last-Admin transaction.
 builder.Services.AddScoped<Zharfa.Api.Users.UserAdminService>();
 // Audit log (spec 005, US3): the in-memory report-open tracker (one per process, research R9) and the read-only query.

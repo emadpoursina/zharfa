@@ -1,11 +1,12 @@
 import { useEffect, useState } from 'react';
-import { getPurchasing, type ReportPrint, type VendorRow } from '../services/api';
-import { defaultPeriod, useReportQuery, type PeriodValue } from '../hooks/useReportQuery';
+import { getPurchasing, downloadReportExport, type ReportPrint, type VendorRow } from '../services/api';
+import { canonicalPeriod, defaultPeriod, useReportQuery, type PeriodValue } from '../hooks/useReportQuery';
 import { comparisonColumns } from '../components/ComparisonCells';
 import { DataQualityNotice } from '../components/DataQualityNotice';
 import { FilterBar } from '../components/FilterBar';
 import { Pager } from '../components/Pager';
 import { PrintReport } from '../components/PrintReport';
+import { SaveReportDialog } from '../components/SaveReportDialog';
 import { ReportStatusLine, ReportTable as Table, type ReportColumn } from '../components/ReportTable';
 import { UnavailableNote } from '../components/UnavailableNote';
 import { faRialFromDecimal } from '../utils/format';
@@ -22,6 +23,7 @@ interface VendorsProps {
   serverToday: string;
   target?: VendorTarget | null;
   showLink?: boolean;
+  canExport?: boolean;
 }
 
 const SORT_KEYS = ['net', 'name', 'code', 'lastPurchase'] as const;
@@ -30,7 +32,7 @@ const SORT_KEYS = ['net', 'name', 'code', 'lastPurchase'] as const;
  * The vendor directory (spec 004 T045, US1): the period, the Persian-tolerant search by name or code, sort and paging,
  * with the previous-period columns when compare is on. A row opens the vendor's profile in place with the current period.
  */
-export function Vendors({ serverToday, target = null, showLink }: VendorsProps) {
+export function Vendors({ serverToday, target = null, showLink, canExport }: VendorsProps) {
   const query = useReportQuery<VendorRow>({
     path: 'vendors',
     declared: ['compare'],
@@ -44,6 +46,21 @@ export function Vendors({ serverToday, target = null, showLink }: VendorsProps) 
   const [profile, setProfile] = useState<{ vendor: { key: string; name: string }; period: PeriodValue } | null>(null);
   const [print, setPrint] = useState<ReportPrint<VendorRow> | null>(null);
   const [printError, setPrintError] = useState<string | null>(null);
+  const [saveOpen, setSaveOpen] = useState(false);
+  const [exporting, setExporting] = useState(false);
+  const [exportError, setExportError] = useState<string | null>(null);
+
+  const exportNow = async () => {
+    setExporting(true);
+    setExportError(null);
+    try {
+      await downloadReportExport('vendors', query.printParams());
+    } catch (caught) {
+      setExportError(caught instanceof Error ? caught.message : 'دریافت خروجی اکسل انجام نشد.');
+    } finally {
+      setExporting(false);
+    }
+  };
 
   // A profile requested from the Overview opens directly, for that month.
   useEffect(() => {
@@ -60,6 +77,7 @@ export function Vendors({ serverToday, target = null, showLink }: VendorsProps) 
         initialPeriod={profile.period}
         onBack={() => setProfile(null)}
         showLink={showLink}
+        canExport={canExport}
       />
     );
   }
@@ -130,7 +148,25 @@ export function Vendors({ serverToday, target = null, showLink }: VendorsProps) 
       )}
       {data && codeUnavailable && <UnavailableNote items={data.unavailable} figure="vendorCode" />}
 
-      <div className="flex justify-end">
+      <div className="flex justify-end gap-2">
+        <button
+          type="button"
+          onClick={() => setSaveOpen(true)}
+          disabled={loading || !data}
+          className="rounded-lg border border-gray-300 bg-white px-3 py-1.5 text-sm font-medium text-gray-800 hover:bg-gray-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-600 disabled:opacity-50 cursor-pointer"
+        >
+          ذخیره گزارش
+        </button>
+        {canExport && (
+          <button
+            type="button"
+            onClick={exportNow}
+            disabled={loading || !data || exporting}
+            className="rounded-lg border border-emerald-300 bg-emerald-50 px-3 py-1.5 text-sm font-medium text-emerald-800 hover:bg-emerald-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-600 disabled:opacity-50 cursor-pointer"
+          >
+            {exporting ? 'در حال دریافت...' : 'خروجی اکسل'}
+          </button>
+        )}
         <button
           type="button"
           onClick={printNow}
@@ -140,6 +176,7 @@ export function Vendors({ serverToday, target = null, showLink }: VendorsProps) 
           چاپ فهرست
         </button>
       </div>
+      {exportError && <p role="alert" className="text-sm text-red-700">{exportError}</p>}
       {printError && <p role="alert" className="text-sm text-red-700">{printError}</p>}
 
       {data && (
@@ -182,6 +219,22 @@ export function Vendors({ serverToday, target = null, showLink }: VendorsProps) 
         columns={columns}
         rowKey={(row) => row.key}
       />
+
+      {saveOpen && (
+        <SaveReportDialog
+          open={saveOpen}
+          kind="vendors"
+          defaultName="فهرست تأمین‌کنندگان"
+          period={canonicalPeriod(filters.period)}
+          filters={{
+            sort: filters.sort,
+            dir: filters.dir,
+            compare: filters.compare,
+            q: filters.q,
+          }}
+          onClose={() => setSaveOpen(false)}
+        />
+      )}
     </div>
   );
 }

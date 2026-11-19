@@ -241,4 +241,5 @@ public class ZharfaDbContext : DbContext
     public DbSet<Receipt> Receipts => Set<Receipt>();
     public DbSet<AppUser> AppUsers => Set<AppUser>();
     public DbSet<AuditLog> AuditLogs => Set<AuditLog>();
+    public DbSet<Zharfa.Api.SavedReports.SavedReport> SavedReports => Set<Zharfa.Api.SavedReports.SavedReport>();
 }

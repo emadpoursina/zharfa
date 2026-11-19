@@ -110,6 +110,15 @@ public static class PurchasingQuestionRouter
             periodRule = "future-empty-month";
             tool = "purchasing_overview";
         }
+        else if (norm.Contains("شش ماه") || norm.Contains("شش‌ماه") || norm.Contains("six months") || norm.Contains("6 ماه"))
+        {
+            if (norm.Contains("کالا") || norm.Contains("محصول") || norm.Contains("product") ||
+                norm.Contains("پرمصرف") || norm.Contains("top") || norm.Contains("برتر") || norm.Contains("بیشترین"))
+            {
+                periodRule = "last-six-jalali-months";
+                tool = "purchasing_top_products";
+            }
+        }
         else if (norm.Contains("فصل"))
         {
             periodRule = "current-jalali-quarter";

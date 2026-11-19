@@ -31,6 +31,11 @@ public static class AuditActions
     public const string ReconciliationMismatch = "reconciliation.mismatch";
     public const string SettingsAiProviderChanged = "settings.ai_provider.changed";
     public const string Question = "ai.question";
+    public const string ReportExported = "report.exported";
+    public const string SavedReportSaved = "saved_report.saved";
+    public const string SavedReportReplaced = "saved_report.replaced";
+    public const string SavedReportOpened = "saved_report.opened";
+    public const string SavedReportDeleted = "saved_report.deleted";
 
     /// <summary>Every action code with its Persian label, in the data-model order.</summary>
     public static IReadOnlyList<(string Code, string Label)> All { get; } =
@@ -58,6 +63,11 @@ public static class AuditActions
         (ReconciliationMismatch, "عدم تطابق در تطبیق"),
         (SettingsAiProviderChanged, "تغییر تنظیمات ارائه‌دهنده هوش مصنوعی"),
         (Question, "پرسش از دستیار هوشمند"),
+        (ReportExported, "خروجی اکسل"),
+        (SavedReportSaved, "ذخیره گزارش"),
+        (SavedReportReplaced, "جایگزینی گزارش ذخیره شده"),
+        (SavedReportOpened, "باز کردن گزارش ذخیره شده"),
+        (SavedReportDeleted, "حذف گزارش ذخیره شده"),
     ];
 
     /// <summary>Persian label of an action code. Unknown codes return the code itself.</summary>

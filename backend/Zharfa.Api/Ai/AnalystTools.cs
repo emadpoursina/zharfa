@@ -25,7 +25,10 @@ public record ToolExecutionResult(
     JalaliPeriod? Period = null,
     string? Vendor = null,
     string? Product = null,
-    string? Category = null);
+    string? Category = null,
+    object? RawResult = null,
+    Zharfa.Api.Purchasing.Reports.DataQualityNotice? DataQuality = null,
+    long TotalRows = 0);
 
 /// <summary>
 /// Execution engine for allowlisted read-only analyst tools.

@@ -1,6 +1,7 @@
 import { useState, type ReactNode } from 'react';
 import {
   getPurchasing,
+  downloadReportExport,
   type DocumentRow,
   type GroupedRow,
   type ReportDrill,
@@ -10,7 +11,7 @@ import {
   type TrendRow,
   type PurchasingQueryValue,
 } from '../services/api';
-import { periodParams, useReportQuery, type ReportFilterName, type ReportFilters } from '../hooks/useReportQuery';
+import { canonicalPeriod, periodParams, useReportQuery, type ReportFilterName, type ReportFilters } from '../hooks/useReportQuery';
 import { comparisonColumns } from '../components/ComparisonCells';
 import { DataQualityNotice } from '../components/DataQualityNotice';
 import { DocumentLinesPanel } from '../components/DocumentLinesPanel';
@@ -18,6 +19,7 @@ import { DrillDownDialog } from '../components/DrillDownDialog';
 import { FilterBar } from '../components/FilterBar';
 import { Pager } from '../components/Pager';
 import { PrintReport } from '../components/PrintReport';
+import { SaveReportDialog } from '../components/SaveReportDialog';
 import { ReportStatusLine, ReportTable as Table, type ReportColumn } from '../components/ReportTable';
 import { UnavailableNote } from '../components/UnavailableNote';
 import { faNum, faQty, faRialFromDecimal } from '../utils/format';
@@ -47,6 +49,7 @@ interface ReportScreenProps<TRow> {
   /** Totals line for the quantity note (quantityMissingLines). */
   quantityNote?: (totals: ReportTotals | undefined) => string | null;
   showLink?: boolean;
+  canExport?: boolean;
 }
 
 interface DrillState {
@@ -100,6 +103,21 @@ function ReportScreen<TRow>(props: ReportScreenProps<TRow>) {
   const [drill, setDrill] = useState<DrillState | null>(null);
   const [print, setPrint] = useState<ReportPrint<TRow> | null>(null);
   const [printError, setPrintError] = useState<string | null>(null);
+  const [saveOpen, setSaveOpen] = useState(false);
+  const [exporting, setExporting] = useState(false);
+  const [exportError, setExportError] = useState<string | null>(null);
+
+  const exportNow = async () => {
+    setExporting(true);
+    setExportError(null);
+    try {
+      await downloadReportExport(path, query.printParams());
+    } catch (caught) {
+      setExportError(caught instanceof Error ? caught.message : 'دریافت خروجی اکسل انجام نشد.');
+    } finally {
+      setExporting(false);
+    }
+  };
 
   const compare = Boolean(data?.previousPeriod);
   const columns = props.buildColumns(data, compare);
@@ -150,7 +168,25 @@ function ReportScreen<TRow>(props: ReportScreenProps<TRow>) {
         <UnavailableNote items={data.unavailable} figure="quantity" />
       )}
 
-      <div className="flex justify-end">
+      <div className="flex justify-end gap-2">
+        <button
+          type="button"
+          onClick={() => setSaveOpen(true)}
+          disabled={loading || !data}
+          className="rounded-lg border border-gray-300 bg-white px-3 py-1.5 text-sm font-medium text-gray-800 hover:bg-gray-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-600 disabled:opacity-50 cursor-pointer"
+        >
+          ذخیره گزارش
+        </button>
+        {props.canExport && (
+          <button
+            type="button"
+            onClick={exportNow}
+            disabled={loading || !data || exporting}
+            className="rounded-lg border border-emerald-300 bg-emerald-50 px-3 py-1.5 text-sm font-medium text-emerald-800 hover:bg-emerald-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-600 disabled:opacity-50 cursor-pointer"
+          >
+            {exporting ? 'در حال دریافت...' : 'خروجی اکسل'}
+          </button>
+        )}
         <button
           type="button"
           onClick={printNow}
@@ -160,6 +196,7 @@ function ReportScreen<TRow>(props: ReportScreenProps<TRow>) {
           چاپ گزارش
         </button>
       </div>
+      {exportError && <p role="alert" className="text-sm text-red-700">{exportError}</p>}
       {printError && <p role="alert" className="text-sm text-red-700">{printError}</p>}
 
       {data && (
@@ -233,6 +270,26 @@ function ReportScreen<TRow>(props: ReportScreenProps<TRow>) {
           drill={drill.drill}
           onClose={() => setDrill(null)}
           showLink={showLink}
+          canExport={props.canExport}
+        />
+      )}
+
+      {saveOpen && (
+        <SaveReportDialog
+          open={saveOpen}
+          kind={path.replace('reports/', '')}
+          defaultName={title}
+          period={canonicalPeriod(filters.period)}
+          filters={{
+            vendor: filters.vendor,
+            product: filters.product,
+            category: filters.category,
+            docType: filters.docType,
+            sort: filters.sort,
+            dir: filters.dir,
+            compare: filters.compare,
+          }}
+          onClose={() => setSaveOpen(false)}
         />
       )}
 
@@ -333,9 +390,10 @@ const rowKeyGrouped = (row: GroupedRow) => `${row.key ?? '~unknown'}`;
 interface SubReportProps {
   serverToday: string;
   showLink?: boolean;
+  canExport?: boolean;
 }
 
-function ByVendorReport({ serverToday, showLink }: SubReportProps) {
+function ByVendorReport({ serverToday, showLink, canExport }: SubReportProps) {
   return (
     <ReportScreen<GroupedRow>
       title="خرید به تفکیک تأمین‌کننده"
@@ -353,6 +411,7 @@ function ByVendorReport({ serverToday, showLink }: SubReportProps) {
       drillTitle={(row) => `اسناد ${row.name}`}
       quantityNote={GROUPED_NOTE}
       showLink={showLink}
+      canExport={canExport}
       buildColumns={(data, compare) => [
         { id: 'name', label: 'تأمین‌کننده', sortKey: 'name', render: (row) => (row.code ? `${row.name} (${row.code})` : row.name) },
         ...groupedMeasures(data, true),
@@ -362,7 +421,7 @@ function ByVendorReport({ serverToday, showLink }: SubReportProps) {
   );
 }
 
-function ByProductReport({ serverToday, showLink }: SubReportProps) {
+function ByProductReport({ serverToday, showLink, canExport }: SubReportProps) {
   return (
     <ReportScreen<GroupedRow>
       title="خرید به تفکیک کالا"
@@ -380,6 +439,7 @@ function ByProductReport({ serverToday, showLink }: SubReportProps) {
       drillTitle={(row) => `اسناد ${row.name}`}
       quantityNote={GROUPED_NOTE}
       showLink={showLink}
+      canExport={canExport}
       buildColumns={(data, compare) => [
         { id: 'name', label: 'کالا', sortKey: 'name', render: (row) => row.name },
         ...groupedMeasures(data, false),
@@ -389,7 +449,7 @@ function ByProductReport({ serverToday, showLink }: SubReportProps) {
   );
 }
 
-function ByCategoryReport({ serverToday, showLink }: SubReportProps) {
+function ByCategoryReport({ serverToday, showLink, canExport }: SubReportProps) {
   return (
     <ReportScreen<GroupedRow>
       title="خرید به تفکیک گروه دارویی"
@@ -407,6 +467,7 @@ function ByCategoryReport({ serverToday, showLink }: SubReportProps) {
       drillTitle={(row) => `اسناد ${row.name}`}
       quantityNote={GROUPED_NOTE}
       showLink={showLink}
+      canExport={canExport}
       buildColumns={(data, compare) => [
         { id: 'name', label: 'گروه دارویی', sortKey: 'name', render: (row) => row.name },
         ...groupedMeasures(data, false),
@@ -416,7 +477,7 @@ function ByCategoryReport({ serverToday, showLink }: SubReportProps) {
   );
 }
 
-function TopProductsReport({ serverToday, showLink }: SubReportProps) {
+function TopProductsReport({ serverToday, showLink, canExport }: SubReportProps) {
   return (
     <ReportScreen<GroupedRow>
       title="پرخریدترین کالاها"
@@ -434,6 +495,7 @@ function TopProductsReport({ serverToday, showLink }: SubReportProps) {
       drillTitle={(row) => `اسناد ${row.name}`}
       quantityNote={GROUPED_NOTE}
       showLink={showLink}
+      canExport={canExport}
       buildColumns={(data, compare) => [
         { id: 'rank', label: 'رتبه', render: (row) => (row.rank ? faNum(row.rank) : '—') },
         { id: 'name', label: 'کالا', render: (row) => row.name },
@@ -444,7 +506,7 @@ function TopProductsReport({ serverToday, showLink }: SubReportProps) {
   );
 }
 
-function TrendReport({ serverToday, showLink }: SubReportProps) {
+function TrendReport({ serverToday, showLink, canExport }: SubReportProps) {
   return (
     <ReportScreen<TrendRow>
       title="روند ماهانه خرید"
@@ -460,6 +522,7 @@ function TrendReport({ serverToday, showLink }: SubReportProps) {
       drillOf={(row) => row.drill}
       drillTitle={(row) => `اسناد ${row.label}`}
       showLink={showLink}
+      canExport={canExport}
       buildColumns={(data, compare) => [
         { id: 'month', label: 'ماه', sortKey: 'month', render: (row) => row.label },
         {
@@ -494,7 +557,7 @@ function TrendReport({ serverToday, showLink }: SubReportProps) {
   );
 }
 
-function ReturnsReport({ serverToday, showLink }: SubReportProps) {
+function ReturnsReport({ serverToday, showLink, canExport }: SubReportProps) {
   return (
     <ReportScreen<ReturnsRow>
       title="برگشت از خرید"
@@ -512,6 +575,7 @@ function ReturnsReport({ serverToday, showLink }: SubReportProps) {
       drillTitle={(row) => `برگشت‌های ${row.vendorName} — ${row.productName}`}
       quantityNote={GROUPED_NOTE}
       showLink={showLink}
+      canExport={canExport}
       buildColumns={(data, compare) => [
         { id: 'vendor', label: 'تأمین‌کننده', sortKey: 'vendor', render: (row) => row.vendorName },
         { id: 'product', label: 'کالا', sortKey: 'product', render: (row) => row.productName },
@@ -544,7 +608,7 @@ function ReturnsReport({ serverToday, showLink }: SubReportProps) {
   );
 }
 
-function TransactionsReport({ serverToday, showLink }: SubReportProps) {
+function TransactionsReport({ serverToday, showLink, canExport }: SubReportProps) {
   return (
     <ReportScreen<DocumentRow>
       title="فهرست اسناد خرید"
@@ -561,6 +625,7 @@ function TransactionsReport({ serverToday, showLink }: SubReportProps) {
       isUnknown={(row) => row.vendorKey === null}
       expandable={(row) => <DocumentLinesPanel documentId={row.documentId} />}
       showLink={showLink}
+      canExport={canExport}
       buildColumns={(data) => [
         { id: 'number', label: 'شماره سند', sortKey: 'number', render: (row) => row.number },
         { id: 'date', label: 'تاریخ', sortKey: 'date', render: (row) => row.dateJalali },
@@ -618,31 +683,32 @@ type ReportId = (typeof REPORT_TABS)[number]['id'];
 interface PurchasingReportsProps {
   serverToday: string;
   showLink?: boolean;
+  canExport?: boolean;
 }
 
 /**
  * The «گزارش‌های خرید» screen (spec 004 US2): the seven standard reports behind one picker. Each report keeps its own
  * filter state and resets when the picker changes.
  */
-export function PurchasingReports({ serverToday, showLink }: PurchasingReportsProps) {
+export function PurchasingReports({ serverToday, showLink, canExport }: PurchasingReportsProps) {
   const [report, setReport] = useState<ReportId>('by-vendor');
 
   const body = (() => {
     switch (report) {
       case 'by-vendor':
-        return <ByVendorReport key="by-vendor" serverToday={serverToday} showLink={showLink} />;
+        return <ByVendorReport key="by-vendor" serverToday={serverToday} showLink={showLink} canExport={canExport} />;
       case 'by-product':
-        return <ByProductReport key="by-product" serverToday={serverToday} showLink={showLink} />;
+        return <ByProductReport key="by-product" serverToday={serverToday} showLink={showLink} canExport={canExport} />;
       case 'by-category':
-        return <ByCategoryReport key="by-category" serverToday={serverToday} showLink={showLink} />;
+        return <ByCategoryReport key="by-category" serverToday={serverToday} showLink={showLink} canExport={canExport} />;
       case 'trend':
-        return <TrendReport key="trend" serverToday={serverToday} showLink={showLink} />;
+        return <TrendReport key="trend" serverToday={serverToday} showLink={showLink} canExport={canExport} />;
       case 'top-products':
-        return <TopProductsReport key="top-products" serverToday={serverToday} showLink={showLink} />;
+        return <TopProductsReport key="top-products" serverToday={serverToday} showLink={showLink} canExport={canExport} />;
       case 'returns':
-        return <ReturnsReport key="returns" serverToday={serverToday} showLink={showLink} />;
+        return <ReturnsReport key="returns" serverToday={serverToday} showLink={showLink} canExport={canExport} />;
       case 'transactions':
-        return <TransactionsReport key="transactions" serverToday={serverToday} showLink={showLink} />;
+        return <TransactionsReport key="transactions" serverToday={serverToday} showLink={showLink} canExport={canExport} />;
     }
   })();
 
