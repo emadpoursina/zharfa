@@ -12,7 +12,10 @@ using Zharfa.Api.Security;
 /// <summary>
 /// T055 (SC-002, research R2, contracts/api.md §0): every controller action that answers an HTTP verb must carry the
 /// policy the contract names. Reflection over the API assembly; a new endpoint without a policy, or with a different
-/// one, fails this suite. Pure: no server, no database.
+/// one, fails this suite. Pure: no server, no database. Phase 6 (T044) adds the financial history/outstanding and
+/// export twins: the document routes need `vendor.financials` alone, the export twins need it **and** `export`
+/// (dual check, same as the purchasing exports). Purchasing must not appear on any action whose policy set contains
+/// `vendor.financials`, and Admin must not pass `vendor.financials` (asserted below).
 /// </summary>
 public class PermissionMatrixTests
 {
@@ -57,7 +60,14 @@ public class PermissionMatrixTests
         ["PurchasingReportsController.VendorCompareExport"] = [Permissions.PurchasingReports, Permissions.Export],
 
         ["VendorFinancialsController.Summary"] = [Permissions.VendorFinancials],
+        ["VendorFinancialsController.SummaryPrint"] = [Permissions.VendorFinancials],
+        ["VendorFinancialsController.SummaryExport"] = [Permissions.VendorFinancials, Permissions.Export],
         ["VendorFinancialsController.Vendor"] = [Permissions.VendorFinancials],
+        ["VendorFinancialsController.History"] = [Permissions.VendorFinancials],
+        ["VendorFinancialsController.HistoryExport"] = [Permissions.VendorFinancials, Permissions.Export],
+        ["VendorFinancialsController.Outstanding"] = [Permissions.VendorFinancials],
+        ["VendorFinancialsController.OutstandingExport"] = [Permissions.VendorFinancials, Permissions.Export],
+        ["VendorFinancialsController.PurchasesVsPaymentsExport"] = [Permissions.VendorFinancials, Permissions.Export],
 
         ["SavedReportsController.List"] = [Permissions.PurchasingReports],
         ["SavedReportsController.Create"] = [Permissions.PurchasingReports],

@@ -20,7 +20,8 @@ public static class VisualIntent
         "purchasing_returns",
         "purchasing_transactions_summary",
         "purchasing_overview",
-        "purchasing_trend"
+        "purchasing_trend",
+        "vendor_financials_list"
     };
 
     private static readonly string[] RankingTokens =

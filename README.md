@@ -82,6 +82,14 @@ write to Mabna; development uses the offline simulator in `deploy/mabna-sim/`.
 - **Audit trail:** `report.exported` on exports; `saved_report.{saved,replaced,opened,deleted}` on saved report actions; access denied logged without result rows.
 - **Spec:** [`specs/007-ai-reports-export/`](specs/007-ai-reports-export/).
 
+## Release 1, Phase 6: Vendor Financials
+
+- **Financials Navigation (`#/financials`):** Accessible to roles with the `vendor.financials` permission (`management`, `finance`). Shows per-vendor signed balance (`vendorBalance`), outstanding payments, payment history, and purchases vs payments (PvP). Admin and Purchasing roles receive 403 on all financial endpoints.
+- **Vendor Balance Reconciliation:** `reconcile vendor-balance` compares SQL function totals against source data re-reads under the candidate/confirmed balance formula mix. Discrepancies block sign-off.
+- **Demo vs Production Availability:** Production mode treats `candidate` and `unknown` formulas as unavailable («داده در دسترس نیست»), ensuring no guessed figures are shown. Demo mode accepts candidate formulas.
+- **Export & Saved Reports:** Financial lists, histories, outstanding instruments, and PvP can be exported to Excel and saved as saved reports with server-side permission enforcement.
+- **Spec:** [`specs/008-vendor-financials/`](specs/008-vendor-financials/).
+
 ## Repository layout
 
 ```

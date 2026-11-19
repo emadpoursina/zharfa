@@ -107,6 +107,13 @@ public static class LogicalTables
     /// <summary>Phase 2, optional drug group master. Not in <see cref="SyncOrder"/>: installs without it stay complete.</summary>
     public const string ProductCategory = "product_category";
 
+    // Phase 6, optional vendor-financial tables. Also not in <see cref="SyncOrder"/>: a purchasing-only install
+    // (no Phase 6 entities in the map) stays complete, and a mapped financial entity that fails still fails the run.
+    public const string PayableDocument = "payable_document";
+    public const string PayableCheque = "payable_cheque";
+    public const string VendorPayment = "vendor_payment";
+    public const string PaymentAllocation = "payment_allocation";
+
     public static readonly IReadOnlyList<string> SyncOrder = [Vendor, Product, Invoice, Return, Line];
 }
 

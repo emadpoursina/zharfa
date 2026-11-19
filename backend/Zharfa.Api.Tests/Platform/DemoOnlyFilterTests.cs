@@ -138,6 +138,7 @@ public class DemoOnlyFilterTests
         Assert.True(modules.Ai);
         Assert.True(modules.PurchasingReports);
         Assert.True(modules.SavedReports);
+        Assert.True(modules.VendorFinancials);
         Assert.False(modules.AiSettings);
         Assert.False(modules.DemoPages);
         Assert.False(modules.DataSync);
@@ -153,6 +154,7 @@ public class DemoOnlyFilterTests
 
         Assert.True(modules.DemoPages);
         Assert.True(modules.SavedReports);
+        Assert.False(modules.VendorFinancials);
         Assert.False(modules.Ai);
         Assert.True(modules.DataSync);
         Assert.True(modules.AiSettings);
@@ -185,6 +187,7 @@ public class DemoOnlyFilterTests
         Assert.False(modules.Ai);
         Assert.False(modules.PurchasingReports);
         Assert.False(modules.SavedReports);
+        Assert.False(modules.VendorFinancials);
         Assert.False(modules.Users);
         Assert.False(modules.AuditLog);
         Assert.False(modules.DataQuality);
@@ -205,6 +208,34 @@ public class DemoOnlyFilterTests
         Assert.True(financeModules.SavedReports);
         Assert.False(emptyModules.SavedReports);
         Assert.True(demoAdminModules.SavedReports);
+    }
+
+    // ---- vendor financials module (Phase 6, T020, contracts/api.md §7) ----
+
+    [Theory]
+    [InlineData(Roles.Management)]
+    [InlineData(Roles.Finance)]
+    public void VendorFinancials_module_is_true_iff_the_role_holds_vendor_financials(string role)
+    {
+        // Production vs demo does not change the flag: only the permission set decides it.
+        Assert.True(SystemModules.For(Production, RolePermissions.For(role)).VendorFinancials);
+        Assert.True(SystemModules.For(Demo, RolePermissions.For(role)).VendorFinancials);
+    }
+
+    [Theory]
+    [InlineData(Roles.Admin)]
+    [InlineData(Roles.Purchasing)]
+    public void Admin_and_Purchasing_never_see_the_vendor_financials_module(string role)
+    {
+        Assert.False(SystemModules.For(Production, RolePermissions.For(role)).VendorFinancials);
+        Assert.False(SystemModules.For(Demo, RolePermissions.For(role)).VendorFinancials);
+    }
+
+    [Fact]
+    public void Empty_permission_set_turns_the_vendor_financials_module_off()
+    {
+        Assert.False(SystemModules.For(Demo, new HashSet<string>()).VendorFinancials);
+        Assert.False(SystemModules.For(Production, RolePermissions.For(null)).VendorFinancials);
     }
 
     // ---- AI payload labels (FR-022, contracts/api.md §5) ----

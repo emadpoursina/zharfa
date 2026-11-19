@@ -27,8 +27,8 @@ export function RankingBarChart({ chart, rows }: RankingBarChartProps) {
   const metricLabel = series?.label || 'خالص خرید';
 
   const categories = rows.map((r) => String(r[categoryId] ?? ''));
-  const rawValues = series?.values ?? rows.map((r) => String(r[series?.metric ?? 'net'] ?? '0'));
-  const numValues = rawValues.map((v) => Math.max(0, parseFloat(v) || 0));
+  const rawValues = series?.values ?? rows.map((r) => (r[series?.metric ?? 'net'] as string | null | undefined));
+  const numValues = rawValues.map((v) => Math.max(0, parseFloat(v ?? '') || 0));
 
   const maxVal = Math.max(0, ...numValues);
   const count = Math.min(categories.length, 20);
@@ -58,13 +58,13 @@ export function RankingBarChart({ chart, rows }: RankingBarChartProps) {
       >
         {categories.slice(0, count).map((category, index) => {
           const val = numValues[index] ?? 0;
-          const rawVal = rawValues[index] ?? '0';
+          const rawVal = rawValues[index];
           const barWidth = maxVal > 0 ? (val / maxVal) * barAreaWidth : 0;
           const y = PAD_TOP + index * ROW_HEIGHT;
           const barY = y + 8;
           const barHeight = ROW_HEIGHT - 16;
           const rankText = toPersianDigits(index + 1);
-          const amountText = faRialFromDecimal(rawVal);
+          const amountText = rawVal != null ? faRialFromDecimal(rawVal) : 'داده در دسترس نیست';
 
           return (
             <g key={`${category}-${index}`} className="group">

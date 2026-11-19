@@ -58,6 +58,12 @@ public class SavedReportsController(
             return new EmptyResult();
         }
 
+        if (request.Kind.StartsWith("vendor-financials", StringComparison.Ordinal) && !User.HasPermission(Permissions.VendorFinancials))
+        {
+            await RespondAccessDeniedAsync(Permissions.VendorFinancials, "برای مشاهده این گزارش به دسترسی «اطلاعات مالی تأمین‌کنندگان» نیاز است.");
+            return new EmptyResult();
+        }
+
         var result = await service.SaveAsync(userId.Value, request, User, ct);
 
         if (!result.Success)
@@ -153,6 +159,12 @@ public class SavedReportsController(
         if (report.Kind == "transactions" && !User.HasPermission(Permissions.PurchasingTransactions))
         {
             await RespondAccessDeniedAsync(Permissions.PurchasingTransactions, "دسترسی تاریخچه تراکنش‌ها (purchasing.transactions) برای این گزارش لازم است.");
+            return new EmptyResult();
+        }
+
+        if ((report.Kind.StartsWith("vendor-financials", StringComparison.Ordinal) || report.RequiredPermission == Permissions.VendorFinancials) && !User.HasPermission(Permissions.VendorFinancials))
+        {
+            await RespondAccessDeniedAsync(Permissions.VendorFinancials, "برای مشاهده این گزارش به دسترسی «اطلاعات مالی تأمین‌کنندگان» نیاز است.");
             return new EmptyResult();
         }
 

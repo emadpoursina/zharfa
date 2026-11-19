@@ -5,3 +5,8 @@ dbo.SimInvDoc
 dbo.SimRetDoc
 dbo.SimInvDocItem
 dbo.SimDrugGroup
+# Phase 6 vendor financials (spec 008, optional entities)
+dbo.SimPayAccDoc
+dbo.SimPayChq
+dbo.SimVendorPay
+dbo.SimPayAlloc

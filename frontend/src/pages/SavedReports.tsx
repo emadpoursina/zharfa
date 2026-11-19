@@ -23,6 +23,37 @@ interface StandardColumn {
 }
 
 function getStandardReportColumns(kind: string, data: any): StandardColumn[] {
+  if (kind === 'vendor-financials') {
+    return [
+      { id: 'name', header: 'تأمین‌کننده', isAmount: false },
+      { id: 'code', header: 'کد', isAmount: false },
+      { id: 'vendorBalance', header: 'مانده تأمین‌کننده', isAmount: true },
+      { id: 'outstandingPayments', header: 'پرداخت‌های معوق', isAmount: true },
+    ];
+  }
+  if (kind === 'vendor-financials-history') {
+    return [
+      { id: 'paidAtJalali', header: 'تاریخ پرداخت', isAmount: false },
+      { id: 'reference', header: 'مرجع', isAmount: false },
+      { id: 'instrumentTypeLabel', header: 'نوع سند', isAmount: false },
+      { id: 'amount', header: 'مبلغ', isAmount: true },
+    ];
+  }
+  if (kind === 'vendor-financials-outstanding') {
+    return [
+      { id: 'dateJalali', header: 'تاریخ', isAmount: false },
+      { id: 'reference', header: 'مرجع', isAmount: false },
+      { id: 'instrumentTypeLabel', header: 'نوع سند', isAmount: false },
+      { id: 'unpaidAmount', header: 'مبلغ معوق', isAmount: true },
+    ];
+  }
+  if (kind === 'vendor-financials-purchases-vs-payments') {
+    return [
+      { id: 'netPurchases', header: 'خالص خرید', isAmount: true },
+      { id: 'payments', header: 'پرداخت‌ها', isAmount: true },
+      { id: 'purchasesMinusPayments', header: 'خرید منهای پرداخت', isAmount: true },
+    ];
+  }
   if (kind === 'vendors-compare') {
     return [
       { id: 'name', header: 'تأمین‌کننده', isAmount: false },
@@ -100,6 +131,9 @@ function getStandardReportColumns(kind: string, data: any): StandardColumn[] {
 
 function getStandardReportRows(kind: string, data: any): any[] {
   if (!data) return [];
+  if (kind === 'vendor-financials-purchases-vs-payments') {
+    return data.purchasesVsPayments ? [data.purchasesVsPayments] : [];
+  }
   if (kind === 'vendors-compare') return data.vendors || [];
   if (kind === 'vendor-profile') {
     if (data.topProducts && Array.isArray(data.topProducts) && data.topProducts.length > 0) return data.topProducts;
@@ -156,6 +190,17 @@ export function SavedReports({ permissions }: SavedReportsProps) {
   }, []);
 
   const handleOpen = async (item: SavedReportItem) => {
+    const hasVendorFinancials = permissions.includes('vendor.financials');
+    if (
+      (item.kind.startsWith('vendor-financials') || item.requiredPermission === 'vendor.financials') &&
+      !hasVendorFinancials
+    ) {
+      setOpenError('برای مشاهده این گزارش به دسترسی «اطلاعات مالی تأمین‌کنندگان» نیاز است.');
+      setOpenedItem(item);
+      setOpenedData(null);
+      return;
+    }
+
     // Permission-removed check for generated
     if (item.kind === 'generated' && !hasAiQuery) {
       setOpenError('دسترسی پرسش از دستیار هوشمند (ai.query) برای این گزارش لازم است.');
@@ -348,7 +393,7 @@ export function SavedReports({ permissions }: SavedReportsProps) {
                               </td>
                               {openedData.visual!.table.columns.map((col) => {
                                 const val = row[col.id];
-                                const isAmount = col.id === 'net' || col.id === 'gross' || col.id === 'returns' || col.id === 'vat';
+                                const isAmount = col.id === 'net' || col.id === 'gross' || col.id === 'returns' || col.id === 'vat' || col.id === 'vendorBalance' || col.id === 'outstandingPayments';
                                 return (
                                   <td key={col.id} className="px-4 py-2.5 text-gray-900">
                                     {isAmount && val ? faRialFromDecimal(val) : (val ? toPersianDigits(val) : '—')}

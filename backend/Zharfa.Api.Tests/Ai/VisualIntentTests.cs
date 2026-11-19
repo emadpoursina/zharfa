@@ -56,4 +56,17 @@ public class VisualIntentTests
 
         Assert.False(actual);
     }
+
+    [Theory]
+    [InlineData("کدام تأمین‌کنندگان بیشترین مانده حساب را دارند؟", "vendor_financials_list", true)]
+    [InlineData("۱۰ تأمین‌کننده با بالاترین بدهی معوق را نشان بده", "vendor_financials_list", true)]
+    [InlineData("مقایسه مانده حساب تأمین‌کنندگان", "vendor_financials_list", true)]
+    [InlineData("مانده حساب تأمین‌کنندگان این ماه چقدر است؟", "vendor_financials_list", false)]
+    public void Vendor_financials_list_is_visual_capable_for_ranking_and_comparison(string question, string mappedTool, bool expected)
+    {
+        var norm = PurchasingQuestionRouter.Normalize(question);
+        var actual = VisualIntent.IsListVisual(norm, mappedTool);
+
+        Assert.Equal(expected, actual);
+    }
 }

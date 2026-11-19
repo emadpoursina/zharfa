@@ -34,7 +34,8 @@ public static class DataQualitySql
 
     private const string LineFrom = "mabna.purchase_line l JOIN mabna.purchase_document d ON d.document_id = l.document_id";
 
-    /// <summary>The fifteen rules MV1–MV4, DU1, BR1–BR3, PI1, DT1–DT2, QT1 and AM1–AM3 in the data-model order.</summary>
+    /// <summary>The twenty-two rules MV1–MV4, DU1–DU2, BR1–BR4, PI1, DT1–DT5, QT1 and AM1–AM4 in the data-model order.
+    /// The Phase 6 additions (MV5, DU2, BR4, DT3–DT5, AM4) cover the synced payables, cheques and payments.</summary>
     public static IReadOnlyList<DataQualityRule> Rules { get; } =
     [
         Document("MV1", "missing-values", "number", "missing",
@@ -104,6 +105,46 @@ public static class DataQualitySql
             "AND EXISTS (SELECT 1 FROM mabna.purchase_line x WHERE x.document_id = d.document_id) " +
             "AND d.doc_discount > (SELECT sum(x.gross_amount - x.line_discount) FROM mabna.purchase_line x " +
             "WHERE x.document_id = d.document_id) + 1"),
+
+        // Phase 6 (spec 008 US1, research R13, FR-031): the financial rules over the synced payables, cheques
+        // and payments. They flag rows for the Admin Data quality page and the Financials notice; the figures
+        // still compute from the same copy. record_kind = payable | payment; scope columns (vendor_source_key,
+        // jalali_key) let the Financials notice select hits in one vendor/period.
+        Financial("MV5", "missing-values", "payable", "vendor", "missing",
+            "payable_document", "d.payable_document_id", "mabna.payable_document d",
+            "NOT d.cancelled AND @financialVendorMapped AND d.vendor_source_key IS NULL"),
+        Financial("BR4", "broken-relationships", "payable", "vendor", "not-in-master",
+            "payable_cheque", "d.payable_cheque_id", "mabna.payable_cheque d",
+            "NOT d.cancelled AND @chequeVendorMapped AND d.vendor_source_key IS NOT NULL AND d.vendor_id IS NULL"),
+        Financial("DT3", "invalid-dates", "payable", "date", "future",
+            "payable_document", "d.payable_document_id", "mabna.payable_document d",
+            "NOT d.cancelled AND d.jalali_key > @todayKey"),
+        Financial("DT4", "invalid-dates", "payable", "date", "too-early",
+            "payable_cheque", "d.payable_cheque_id", "mabna.payable_cheque d",
+            "NOT d.cancelled AND d.jalali_key < @earliestKey"),
+        Financial("DT5", "invalid-dates", "payment", "date", "future",
+            "vendor_payment", "d.vendor_payment_id", "mabna.vendor_payment d",
+            "NOT d.cancelled AND d.jalali_key > @todayKey"),
+        Financial("AM4", "inconsistent-amounts", "payable", "amount", "remaining-exceeds-face",
+            "payable_cheque", "d.payable_cheque_id", "mabna.payable_cheque d",
+            "NOT d.cancelled AND d.remaining_amount > d.amount"),
+
+        // DU2: the lowest payment of each (vendor, normalized reference) group is kept (same rule shape as DU1).
+        new DataQualityRule(
+            "DU2", "duplicate-records", "payment", "number", "duplicate-reference",
+            "INSERT INTO data_quality_issue " +
+            "(run_id, issue_type, record_kind, record_ref, field, reason, document_id, line_id, product_id, vendor_source_key, jalali_key) " +
+            "SELECT @runId, 'duplicate-records', 'payment', 'payment:' || d.vendor_payment_id, 'number', 'duplicate-reference', " +
+            "NULL::bigint, NULL::bigint, NULL::bigint, d.vendor_source_key, d.jalali_key " +
+            "FROM (SELECT x.vendor_payment_id, x.keeper, x.vendor_source_key, x.jalali_key FROM (" +
+            "SELECT d.vendor_payment_id, min(d.vendor_payment_id) OVER " +
+            "(PARTITION BY d.vendor_source_key, mabna.fn_search_key(d.reference)) AS keeper, " +
+            "d.vendor_source_key, d.jalali_key " +
+            "FROM mabna.vendor_payment d " +
+            "WHERE NOT d.cancelled AND btrim(coalesce(d.reference, '')) <> '' AND d.vendor_source_key IS NOT NULL" +
+            ") x) d " +
+            "WHERE d.vendor_payment_id <> d.keeper " +
+            "ON CONFLICT DO NOTHING"),
     ];
 
     private static DataQualityRule Document(string id, string issueType, string field, string reason, string from, string where) =>
@@ -113,6 +154,21 @@ public static class DataQualitySql
     private static DataQualityRule Line(string id, string issueType, string field, string reason, string where) =>
         new(id, issueType, "line", field, reason,
             Insert(issueType, "line", LineRef, field, reason, "d.document_id", "l.line_id", "l.product_id", LineFrom, where));
+
+    /// <summary>
+    /// A Phase 6 financial rule: record_kind payable | payment, no document/line/product ids, and the scope
+    /// columns (vendor_source_key, jalali_key) copied from the flagged row so the Financials notice can filter by
+    /// vendor and period. Arguments are fixed text chosen above (never user input).
+    /// </summary>
+    private static DataQualityRule Financial(
+        string id, string issueType, string recordKind, string field, string reason,
+        string refPrefix, string idExpr, string from, string where) =>
+        new(id, issueType, recordKind, field, reason,
+            "INSERT INTO data_quality_issue " +
+            "(run_id, issue_type, record_kind, record_ref, field, reason, document_id, line_id, product_id, vendor_source_key, jalali_key) " +
+            "SELECT @runId, '" + issueType + "', '" + recordKind + "', '" + refPrefix + ":' || " + idExpr + ", '" + field + "', '" + reason + "', " +
+            "NULL::bigint, NULL::bigint, NULL::bigint, d.vendor_source_key, d.jalali_key " +
+            "FROM " + from + "\nWHERE " + where + "\nON CONFLICT DO NOTHING");
 
     private static string Insert(
         string issueType,

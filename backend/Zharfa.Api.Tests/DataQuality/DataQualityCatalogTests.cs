@@ -63,13 +63,13 @@ public class DataQualityCatalogTests
     }
 
     [Theory]
-    [InlineData("missing-values", "overview", "vendors", "by-vendor", "by-product", "by-category", "trend", "top-products", "returns", "transactions", "vendors-compare", "drill-down")]
-    [InlineData("duplicate-records", "overview", "vendors", "by-vendor", "by-product", "by-category", "trend", "top-products", "returns", "transactions", "vendors-compare", "drill-down")]
-    [InlineData("broken-relationships", "overview", "vendors", "by-vendor", "by-product", "by-category", "top-products", "returns", "transactions", "vendors-compare", "drill-down")]
+    [InlineData("missing-values", "overview", "vendors", "by-vendor", "by-product", "by-category", "trend", "top-products", "returns", "transactions", "vendors-compare", "drill-down", "vendor-financials", "vendor-financials-history", "vendor-financials-outstanding")]
+    [InlineData("duplicate-records", "overview", "vendors", "by-vendor", "by-product", "by-category", "trend", "top-products", "returns", "transactions", "vendors-compare", "drill-down", "vendor-financials", "vendor-financials-history", "vendor-financials-outstanding")]
+    [InlineData("broken-relationships", "overview", "vendors", "by-vendor", "by-product", "by-category", "top-products", "returns", "transactions", "vendors-compare", "drill-down", "vendor-financials", "vendor-financials-history", "vendor-financials-outstanding")]
     [InlineData("inconsistent-product-ids", "overview", "vendors", "by-product", "by-category", "top-products", "returns", "drill-down")]
-    [InlineData("invalid-dates", "overview", "vendors", "by-vendor", "by-product", "by-category", "trend", "top-products", "returns", "transactions", "vendors-compare", "drill-down")]
+    [InlineData("invalid-dates", "overview", "vendors", "by-vendor", "by-product", "by-category", "trend", "top-products", "returns", "transactions", "vendors-compare", "drill-down", "vendor-financials", "vendor-financials-history", "vendor-financials-outstanding")]
     [InlineData("unexpected-quantities", "vendors", "by-vendor", "by-product", "by-category", "top-products", "returns", "vendors-compare", "drill-down")]
-    [InlineData("inconsistent-amounts", "overview", "vendors", "by-vendor", "by-product", "by-category", "trend", "top-products", "returns", "transactions", "vendors-compare", "drill-down")]
+    [InlineData("inconsistent-amounts", "overview", "vendors", "by-vendor", "by-product", "by-category", "trend", "top-products", "returns", "transactions", "vendors-compare", "drill-down", "vendor-financials", "vendor-financials-history", "vendor-financials-outstanding")]
     public void Affected_reports_equal_research_R13(string issueType, params string[] expected)
     {
         var actual = DataQualityCatalog.Find(issueType)!.AffectedReports;
@@ -145,5 +145,49 @@ public class DataQualityCatalogTests
         Assert.Equal("vendors", DataQualityCatalog.NoticeKey("vendor-profile"));
         Assert.Equal("drill-down", DataQualityCatalog.NoticeKey("drill-down-lines"));
         Assert.Equal("trend", DataQualityCatalog.NoticeKey("trend"));
+        Assert.Equal("vendor-financials", DataQualityCatalog.NoticeKey("vendor-financials-detail"));
+    }
+
+    // ---- Phase 6 (T021): the five types whose rules can flag payable / cheque / payment rows ----
+
+    private static readonly string[] FinancialReportKeys =
+        ["vendor-financials", "vendor-financials-history", "vendor-financials-outstanding"];
+
+    [Theory]
+    [InlineData("missing-values")]
+    [InlineData("duplicate-records")]
+    [InlineData("broken-relationships")]
+    [InlineData("invalid-dates")]
+    [InlineData("inconsistent-amounts")]
+    public void Types_that_can_flag_financial_rows_affect_the_financial_reports(string issueType)
+    {
+        var reports = DataQualityCatalog.Find(issueType)!.AffectedReports;
+
+        foreach (var key in FinancialReportKeys)
+        {
+            Assert.Contains(key, reports);
+        }
+    }
+
+    [Theory]
+    [InlineData("inconsistent-product-ids")]
+    [InlineData("unexpected-quantities")]
+    public void Purchase_only_types_do_not_affect_the_financial_reports(string issueType)
+    {
+        var reports = DataQualityCatalog.Find(issueType)!.AffectedReports;
+
+        foreach (var key in FinancialReportKeys)
+        {
+            Assert.DoesNotContain(key, reports);
+        }
+    }
+
+    [Fact]
+    public void Every_financial_report_key_maps_to_at_least_missing_values()
+    {
+        foreach (var key in new[] { "vendor-financials", "vendor-financials-detail", "vendor-financials-history", "vendor-financials-outstanding" })
+        {
+            Assert.Contains("missing-values", DataQualityCatalog.TypesFor(key));
+        }
     }
 }

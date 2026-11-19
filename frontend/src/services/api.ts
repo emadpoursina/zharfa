@@ -176,6 +176,8 @@ export interface SystemModules {
   aiSettings: boolean;
   /** Saved reports page (purchasing.reports permission, spec 007). */
   savedReports: boolean;
+  /** Vendor financials (spec 008): true iff the caller holds `vendor.financials`; navigation only — the server enforces the policy. */
+  vendorFinancials: boolean;
 }
 
 export interface SystemStatus {
@@ -343,7 +345,7 @@ export interface ReportPeriod {
   to: string;
   label: string;
   /** Set when the requested range runs past today. */
-  trimmedTo: string | null;
+  trimmedTo?: string | null;
 }
 
 export interface ReportFilterEcho {
@@ -823,7 +825,7 @@ export interface VisualCaptions {
 export interface VisualChartSeries {
   metric: string;
   label: string;
-  values: string[];
+  values: (string | null)[];
 }
 
 export interface VisualChart {
@@ -1093,4 +1095,221 @@ export function downloadAiVisualExport(saveSpec: unknown): Promise<void> {
 
 export function downloadSavedReportExport(id: number): Promise<void> {
   return downloadFile(`/api/saved-reports/${id}/export`, undefined, 'GET');
+}
+
+// ---------------------------------------------------------------------------
+// Vendor Financials (Release 1, Phase 6, contracts/api.md §1–§5)
+// ---------------------------------------------------------------------------
+
+export interface VendorFinancialUnavailable {
+  figure: string;
+  reason: string;
+  message: string;
+}
+
+export interface VendorFinancialPeriod extends ReportPeriod {
+  month?: string | null;
+}
+
+export interface VendorFinancialSummaryRow {
+  key: string;
+  name: string;
+  code: string | null;
+  vendorBalance: string | null;
+  outstandingPayments: string | null;
+  previousVendorBalance?: string | null;
+  previousOutstandingPayments?: string | null;
+  deltaVendorBalance?: string | null;
+  percentVendorBalance?: string | null;
+  deltaOutstanding?: string | null;
+  percentOutstanding?: string | null;
+}
+
+export interface VendorFinancialsSummaryResponse {
+  dataLabel: DataLabel;
+  demoNotice?: string | null;
+  lastSuccessfulSync?: LastSuccessfulSync | null;
+  currency: string;
+  currencyLabel: string;
+  period: VendorFinancialPeriod;
+  previousPeriod?: VendorFinancialPeriod | null;
+  filters: ReportFilterEcho[];
+  unavailable: VendorFinancialUnavailable[];
+  compare: boolean;
+  page: number;
+  pageSize: number;
+  totalRows: number;
+  search: { q: string; normalized: string };
+  sort: { key: string; dir: 'asc' | 'desc' };
+  dataQuality?: DataQualityNotice | null;
+  available: boolean;
+  rows: VendorFinancialSummaryRow[];
+}
+
+export interface VendorFinancialsPrintResponse extends Omit<VendorFinancialsSummaryResponse, 'page' | 'pageSize'> {
+  truncated: boolean;
+  limit: number;
+}
+
+export interface VendorPurchasesVsPayments {
+  netPurchases: string | null;
+  payments: string | null;
+  purchasesMinusPayments?: string | null;
+  previousNetPurchases?: string | null;
+  previousPayments?: string | null;
+  deltaNetPurchases?: string | null;
+  percentNetPurchases?: string | null;
+  deltaPayments?: string | null;
+  percentPayments?: string | null;
+}
+
+export interface VendorFinancialDetailResponse {
+  dataLabel: DataLabel;
+  demoNotice?: string | null;
+  lastSuccessfulSync?: LastSuccessfulSync | null;
+  currency: string;
+  currencyLabel: string;
+  period: VendorFinancialPeriod;
+  previousPeriod?: VendorFinancialPeriod | null;
+  vendor: { key: string; name: string; code?: string | null };
+  unavailable: VendorFinancialUnavailable[];
+  dataQuality?: DataQualityNotice | null;
+  available: boolean;
+  vendorBalance: string | null;
+  outstandingPayments: string | null;
+  purchasesVsPayments: VendorPurchasesVsPayments;
+}
+
+export interface PaymentHistoryRow {
+  paidAtJalali: string;
+  reference: string | null;
+  instrumentType: string;
+  instrumentTypeLabel: string;
+  amount: string;
+}
+
+export interface OutstandingInstrumentRow {
+  dateJalali: string;
+  reference: string | null;
+  instrumentType: string;
+  instrumentTypeLabel: string;
+  unpaidAmount: string;
+}
+
+export interface VendorFinancialListResponse<T> {
+  dataLabel: DataLabel;
+  demoNotice?: string | null;
+  lastSuccessfulSync?: LastSuccessfulSync | null;
+  currency: string;
+  currencyLabel: string;
+  period: VendorFinancialPeriod;
+  filters: ReportFilterEcho[];
+  unavailable: VendorFinancialUnavailable[];
+  page: number;
+  pageSize: number;
+  totalRows: number;
+  sort: string;
+  dir: 'asc' | 'desc';
+  dataQuality?: DataQualityNotice | null;
+  available: boolean;
+  rows: T[];
+}
+
+export function getVendorFinancialsSummary(params: Record<string, PurchasingQueryValue> = {}): Promise<VendorFinancialsSummaryResponse> {
+  const search = new URLSearchParams();
+  for (const [name, value] of Object.entries(params)) {
+    if (value !== undefined && value !== null && value !== '') {
+      search.set(name, String(value));
+    }
+  }
+  const query = search.toString();
+  return apiGet<VendorFinancialsSummaryResponse>(`/api/vendor-financials/summary${query ? `?${query}` : ''}`);
+}
+
+export function getVendorFinancialsPrint(params: Record<string, PurchasingQueryValue> = {}): Promise<VendorFinancialsPrintResponse> {
+  const search = new URLSearchParams();
+  for (const [name, value] of Object.entries(params)) {
+    if (value !== undefined && value !== null && value !== '') {
+      search.set(name, String(value));
+    }
+  }
+  const query = search.toString();
+  return apiGet<VendorFinancialsPrintResponse>(`/api/vendor-financials/summary/print${query ? `?${query}` : ''}`);
+}
+
+export function getVendorFinancialDetail(vendorKey: string, params: Record<string, PurchasingQueryValue> = {}): Promise<VendorFinancialDetailResponse> {
+  const search = new URLSearchParams();
+  for (const [name, value] of Object.entries(params)) {
+    if (value !== undefined && value !== null && value !== '') {
+      search.set(name, String(value));
+    }
+  }
+  const query = search.toString();
+  return apiGet<VendorFinancialDetailResponse>(`/api/vendor-financials/vendors/${encodeURIComponent(vendorKey)}${query ? `?${query}` : ''}`);
+}
+
+export function getVendorPaymentHistory(vendorKey: string, params: Record<string, PurchasingQueryValue> = {}): Promise<VendorFinancialListResponse<PaymentHistoryRow>> {
+  const search = new URLSearchParams();
+  for (const [name, value] of Object.entries(params)) {
+    if (value !== undefined && value !== null && value !== '') {
+      search.set(name, String(value));
+    }
+  }
+  const query = search.toString();
+  return apiGet<VendorFinancialListResponse<PaymentHistoryRow>>(`/api/vendor-financials/vendors/${encodeURIComponent(vendorKey)}/history${query ? `?${query}` : ''}`);
+}
+
+export function getVendorOutstanding(vendorKey: string, params: Record<string, PurchasingQueryValue> = {}): Promise<VendorFinancialListResponse<OutstandingInstrumentRow>> {
+  const search = new URLSearchParams();
+  for (const [name, value] of Object.entries(params)) {
+    if (value !== undefined && value !== null && value !== '') {
+      search.set(name, String(value));
+    }
+  }
+  const query = search.toString();
+  return apiGet<VendorFinancialListResponse<OutstandingInstrumentRow>>(`/api/vendor-financials/vendors/${encodeURIComponent(vendorKey)}/outstanding${query ? `?${query}` : ''}`);
+}
+
+export function downloadVendorFinancialsSummaryExport(params: Record<string, PurchasingQueryValue> = {}): Promise<void> {
+  const search = new URLSearchParams();
+  for (const [name, value] of Object.entries(params)) {
+    if (value !== undefined && value !== null && value !== '') {
+      search.set(name, String(value));
+    }
+  }
+  const query = search.toString();
+  return downloadFile(`/api/vendor-financials/summary/export${query ? `?${query}` : ''}`, undefined, 'GET');
+}
+
+export function downloadVendorHistoryExport(vendorKey: string, params: Record<string, PurchasingQueryValue> = {}): Promise<void> {
+  const search = new URLSearchParams();
+  for (const [name, value] of Object.entries(params)) {
+    if (value !== undefined && value !== null && value !== '') {
+      search.set(name, String(value));
+    }
+  }
+  const query = search.toString();
+  return downloadFile(`/api/vendor-financials/vendors/${encodeURIComponent(vendorKey)}/history/export${query ? `?${query}` : ''}`, undefined, 'GET');
+}
+
+export function downloadVendorOutstandingExport(vendorKey: string, params: Record<string, PurchasingQueryValue> = {}): Promise<void> {
+  const search = new URLSearchParams();
+  for (const [name, value] of Object.entries(params)) {
+    if (value !== undefined && value !== null && value !== '') {
+      search.set(name, String(value));
+    }
+  }
+  const query = search.toString();
+  return downloadFile(`/api/vendor-financials/vendors/${encodeURIComponent(vendorKey)}/outstanding/export${query ? `?${query}` : ''}`, undefined, 'GET');
+}
+
+export function downloadVendorPurchasesVsPaymentsExport(vendorKey: string, params: Record<string, PurchasingQueryValue> = {}): Promise<void> {
+  const search = new URLSearchParams();
+  for (const [name, value] of Object.entries(params)) {
+    if (value !== undefined && value !== null && value !== '') {
+      search.set(name, String(value));
+    }
+  }
+  const query = search.toString();
+  return downloadFile(`/api/vendor-financials/vendors/${encodeURIComponent(vendorKey)}/purchases-vs-payments/export${query ? `?${query}` : ''}`, undefined, 'GET');
 }

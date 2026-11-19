@@ -178,4 +178,32 @@ public class PurchasingQuestionRouterTests
         Assert.Equal("purchasing_top_products", route.Tool);
         Assert.Equal("overview-default", route.PeriodRule);
     }
+
+    [Theory]
+    [InlineData("مانده حساب و بدهی تأمین‌کننده چقدر است؟")]
+    [InlineData("وضعیت پرداخت‌ها و چک‌های صادر شده")]
+    [InlineData("اسناد پرداختنی معوق این ماه")]
+    public void Financial_questions_without_financial_permission_stay_scope_vendor_financials_with_no_tool(string question)
+    {
+        var route = PurchasingQuestionRouter.Classify(question, hasSuccessfulSync: true, hasVendorFinancials: false);
+
+        Assert.Equal("vendor-financials", route.Scope);
+        Assert.Null(route.Tool);
+        Assert.Null(route.PeriodRule);
+    }
+
+    [Theory]
+    [InlineData("مانده حساب تأمین‌کننده البرز چقدر است؟", "vendor_balance")]
+    [InlineData("مجموع پرداخت‌ها به شرکت داروسازی تهران در این ماه", "vendor_payments")]
+    [InlineData("اسناد پرداختنی و چک‌های معوق تا پایان ماه", "vendor_outstanding")]
+    [InlineData("خرید در برابر پرداخت تأمین‌کننده البرز", "vendor_purchases_vs_payments")]
+    [InlineData("کدام تأمین‌کنندگان بیشترین مانده حساب را دارند؟", "vendor_financials_list")]
+    public void Financial_questions_with_financial_permission_map_to_financial_tools(string question, string expectedTool)
+    {
+        var route = PurchasingQuestionRouter.Classify(question, hasSuccessfulSync: true, hasVendorFinancials: true);
+
+        Assert.Equal("vendor-financials", route.Scope);
+        Assert.Equal(expectedTool, route.Tool);
+        Assert.NotNull(route.PeriodRule);
+    }
 }

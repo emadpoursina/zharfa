@@ -19,6 +19,9 @@ public static class SourceMapValidator
     private static readonly string[] AmountSigns = { "asIs", "negate", "abs" };
     private static readonly string[] ChangeStrategies = { "rowversion", "modifiedAt", "idWatermark", "full" };
 
+    /// <summary>The candidate balance mixes the code knows (contracts/source-map.md). Anything else is unknown.</summary>
+    private static readonly string[] KnownBalanceMixes = { "openPayablesPlusUnpaidCheques" };
+
     /// <param name="policy">Connector policy used for rule 2 (exclusions + allowlist).</param>
     public static IReadOnlyList<SourceMapProblem> Validate(SourceMap? map, MabnaObjectPolicy policy)
     {
@@ -130,6 +133,34 @@ public static class SourceMapValidator
                     "amountSign must be asIs, negate or abs."));
             }
 
+            // Phase 6 amount fields (payable remaining is signed, cheque/payment amounts are non-negative).
+            if (entity.Amount is not null &&
+                (string.IsNullOrWhiteSpace(entity.Amount.AmountSign) ||
+                 !AmountSigns.Contains(entity.Amount.AmountSign)))
+            {
+                problems.Add(new SourceMapProblem("amount-sign-invalid",
+                    $"amountSign '{entity.Amount.AmountSign}' برای {entityName} نامعتبر است. " +
+                    "amountSign must be asIs, negate or abs."));
+            }
+
+            if (entity.RemainingAmount is not null &&
+                (string.IsNullOrWhiteSpace(entity.RemainingAmount.AmountSign) ||
+                 !AmountSigns.Contains(entity.RemainingAmount.AmountSign)))
+            {
+                problems.Add(new SourceMapProblem("amount-sign-invalid",
+                    $"amountSign '{entity.RemainingAmount.AmountSign}' برای {entityName} نامعتبر است. " +
+                    "amountSign must be asIs, negate or abs."));
+            }
+
+            if (entity.ClearedAt is not null &&
+                (string.IsNullOrWhiteSpace(entity.ClearedAt.Format) ||
+                 !DateFormats.Contains(entity.ClearedAt.Format)))
+            {
+                problems.Add(new SourceMapProblem("date-format-invalid",
+                    $"قالب تاریخ '{entity.ClearedAt.Format ?? "(خالی)"}' برای {entityName} نامعتبر است. " +
+                    "clearedAt.format must be jalaliText, jalaliInt or gregorian."));
+            }
+
             if (entity.Change is not null &&
                 (string.IsNullOrWhiteSpace(entity.Change.Strategy) ||
                  !ChangeStrategies.Contains(entity.Change.Strategy)))
@@ -154,7 +185,6 @@ public static class SourceMapValidator
                         $"نام ستون '{field.Column}' در {entityName} نامعتبر است. Invalid column identifier."));
                 }
             }
-
             if (entity.Cancelled?.Column is not null &&
                 !MabnaObjectPolicy.IsValidIdentifier(entity.Cancelled.Column))
             {
@@ -170,6 +200,28 @@ public static class SourceMapValidator
         {
             problems.Add(new SourceMapProblem("document-key-missing",
                 "purchaseLine.documentKey الزامی است. purchaseLine.documentKey is required."));
+        }
+
+        // Phase 6 (contracts/source-map.md "Validation additions"): a declared balance formula must name a
+        // known mix; absent balanceFormula is not an error (it only makes the balance unavailable).
+        if (map.BalanceFormula is not null &&
+            (string.IsNullOrWhiteSpace(map.BalanceFormula.Mix) ||
+             !KnownBalanceMixes.Contains(map.BalanceFormula.Mix.Trim())))
+        {
+            problems.Add(new SourceMapProblem("balance-mix-unknown",
+                $"مخلوط مانده '{map.BalanceFormula.Mix ?? "(خالی)"}' شناخته نشده است. " +
+                "balanceFormula.mix must be a known mix id."));
+        }
+
+        // Phase 6: a mapped payableCheque must declare instrumentType and state — either a column or an
+        // explicit unknown status — so the formulas know which types/states they cover (FR-001).
+        if (map.PayableCheque is not null &&
+            (IsRequiredItemMissing(map.PayableCheque.InstrumentType) ||
+             IsRequiredItemMissing(map.PayableCheque.State)))
+        {
+            problems.Add(new SourceMapProblem("payable-cheque-type-state-missing",
+                "payableCheque.instrumentType و payableCheque.state باید ستون یا status=unknown صریح داشته باشند. " +
+                "payableCheque requires an instrumentType and a state item (column or explicit unknown)."));
         }
 
         if (invoice is not null && map.PurchaseReturn is not null &&
@@ -215,7 +267,20 @@ public static class SourceMapValidator
         yield return ("purchaseReturn", map.PurchaseReturn);
         yield return ("purchaseLine", map.PurchaseLine);
         yield return ("productCategory", map.ProductCategory);
+        yield return ("payableDocument", map.PayableDocument);
+        yield return ("payableCheque", map.PayableCheque);
+        yield return ("vendorPayment", map.VendorPayment);
+        yield return ("paymentAllocation", map.PaymentAllocation);
     }
+
+    /// <summary>
+    /// A required Phase 6 item is present when it exists and carries either a column or an explicit
+    /// <c>unknown</c> status. A missing item, or an item with neither, is invalid for a required formula item.
+    /// </summary>
+    private static bool IsRequiredItemMissing(SourceMapField? field) =>
+        field is null ||
+        (string.IsNullOrWhiteSpace(field.Column) &&
+         !string.Equals(field.Status?.Trim(), "unknown", StringComparison.OrdinalIgnoreCase));
 
     private static IEnumerable<(string Name, SourceMapField? Field)> NamedFields(SourceMapEntity entity)
     {
@@ -232,6 +297,12 @@ public static class SourceMapValidator
         yield return ("vat", entity.Vat);
         yield return ("code", entity.Code);
         yield return ("categoryKey", entity.CategoryKey);
+        yield return ("amount", entity.Amount);
+        yield return ("remainingAmount", entity.RemainingAmount);
+        yield return ("instrumentType", entity.InstrumentType);
+        yield return ("state", entity.State);
+        yield return ("clearedAt", entity.ClearedAt);
+        yield return ("instrumentKey", entity.InstrumentKey);
         yield return ("date", entity.Date);
         yield return ("grossAmount", entity.GrossAmount);
         foreach (var filter in entity.Filter)

@@ -57,6 +57,7 @@ public sealed class DataQualityValidator(
         }
 
         var mapping = new PurchaseMapping(check.Map, runtime.IsProduction);
+        var financial = new VendorFinancialMapping(check.Map, runtime.IsProduction);
         var values = new Dictionary<string, object>(StringComparer.Ordinal)
         {
             ["todayKey"] = TodayKey(syncFinishedUtc),
@@ -66,6 +67,10 @@ public sealed class DataQualityValidator(
             ["productMapped"] = mapping.Line.ProductKey is not null,
             ["quantityMapped"] = mapping.Line.Quantity is not null,
             ["categoryMapped"] = mapping.ProductCategoryKey is not null && mapping.ProductCategory is not null,
+            // Phase 6 financial flags: a missing vendor/reference column in the map is an availability hole,
+            // not a data-quality finding — the rule stays silent when the map cannot store the value at all.
+            ["financialVendorMapped"] = financial.PayableDocument?.VendorKey is not null,
+            ["chequeVendorMapped"] = financial.PayableCheque?.VendorKey is not null,
         };
 
         await using var connection = await db.OpenConnectionAsync(cancellationToken);

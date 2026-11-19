@@ -43,6 +43,32 @@ DESCISH = re.compile(r"desc|dsc|note|addr|street|alley|reference|memo|comment|re
 PHONE = re.compile(r"tel|phone|mbl|mobile|fax", re.I)
 DIGITSISH = re.compile(r"zip|postal|national|nationalcode|number|no$|serial", re.I)
 
+# ---- Phase 6 (spec 008, T025): made-up vendor-financial tables of the committed example capture ----
+# Keyed ONLY on the Sim* names of deploy/mabna-sim/example/schema-capture.example.txt (never real names,
+# so on-site generation is untouched). These tables are seeded with the demo cases the financials need
+# (research R12): a credit vendor, a vendor with purchases and payments in the same Jalali month, vendors
+# with zero payables, fully open and fully cleared cheques, and ONE partial-pay row that is documented as
+# candidate for unit tests (docs/metrics/vendor-financials.md, mabna-sim README). The purchase documents
+# that make the "same month" case real come from the gitignored purchase scenario (README Phase 6).
+FINANCIAL_EXAMPLE = {
+    "simpayaccdoc": "document",
+    "simpaychq": "cheque",
+    "simvendorpay": "payment",
+    "simpayalloc": "allocation",
+}
+
+# (vendor, jalali date, amount, reference, cancelled) of the seeded payables.
+FINANCIAL_DOCUMENTS = [
+    ((1404, 5, 10), 12000000, "PAYDOC-1002", 0),
+    ((1405, 2, 7), 3500000, "PAYDOC-1003", 0),
+    ((1405, 6, 28), 1250000, "PAYDOC-1004", 0),
+    ((1403, 8, 20), 8000000, "PAYDOC-1005", 0),
+    ((1405, 7, 5), 2750000, "PAYDOC-1006", 0),   # same Jalali month as its vendor's payments
+    ((1404, 3, 15), -5000000, "PAYDOC-CREDIT-1", 0),  # credit note: negative remaining
+    ((1405, 1, 15), -1500000, "PAYDOC-CREDIT-2", 0),  # credit vendor: signed total stays negative
+    ((1405, 1, 16), 9999999, "PAYDOC-VOID", 1),       # cancelled: excluded from every figure
+]
+
 
 class C:
     """Column wrapper."""
@@ -243,6 +269,11 @@ def run(capture, cfg, out_dir, db, selection=None, row_counts=None, lookups=None
 
     for t in m.tables:
         visit(t)
+
+    # Phase 6 example tables (made-up Sim* names only); seeded by seed_financial_table below.
+    fin_tables = [t for t in order if t[1].lower() in FINANCIAL_EXAMPLE]
+    fin_set = set(fin_tables)
+    fin_keys = {}  # table -> list of seeded key values (instrument references across tables)
 
     def target(t):
         name = t[1]
@@ -543,6 +574,167 @@ def run(capture, cfg, out_dir, db, selection=None, row_counts=None, lookups=None
             return rng.randint(1, 5000) * 10000
         return rng.randint(0, min(mx, 100))
 
+    def seed_financial_table(t, out, fin_keys):
+        """Build the demo rows of one made-up Sim* financial table (spec 008, T025). Partial dicts are
+        completed by complete(); returns False when the shape is not recognised (caller then generates
+        the table generically)."""
+        kind = FINANCIAL_EXAMPLE[t[1].lower()]
+        byname = {c.name.lower(): c for c in cols[t]}
+        fks = [f for f in fks_of[t] if not f["stub"] and f["to"] != t]
+        if not fks:
+            return False
+        vendor_fk = fks[0]
+        parents = rows.get(vendor_fk["to"], [])
+        if not parents:
+            return False
+        vkeys = [pr[vendor_fk["tocols"][0]] for pr in parents]
+        vcol = vendor_fk["cols"][0]
+
+        def find(*hints, required=True, exclude=()):
+            for h in hints:
+                for name, c in byname.items():
+                    if h in name and not any(x in name for x in exclude):
+                        return c
+            if required:
+                raise KeyError("%s: no column for %s" % (t[1], hints))
+            return None
+
+        def key_col():
+            for c in cols[t]:
+                if c.ident:
+                    return c
+            ks = key_sets(t)
+            if ks:
+                return byname[ks[0][0].lower()]
+            return None
+
+        def dval(c, jd):
+            y, m, d = jd
+            if c.t in ("tinyint", "smallint", "int", "bigint"):
+                return y * 10000 + m * 100 + d
+            if c.text:
+                return "%04d/%02d/%02d" % (y, m, d)
+            raise KeyError("%s: unsupported date column %s" % (t[1], c.name))
+
+        def add(parts):
+            for i, part in enumerate(parts, len(out) + 1):
+                out.append(complete(t, part, i))
+
+        try:
+            kc = key_col()
+            if kc is None:
+                return False
+            cancel = find("cancel", required=False)
+            if kind == "document":
+                date = find("docdate", "issuedate", "paydate", "date")
+                amount = find("remain")
+                number = find("number", "docno", required=False)
+                base = len(out)
+                parts = []
+                for n, (jd, amt, ref, cancelled) in enumerate(FINANCIAL_DOCUMENTS, base + 1):
+                    # vendors: the first three vendor rows take the payables; the rest stay payable-free
+                    vk = vkeys[(n - 1) % min(3, len(vkeys))]
+                    part = {kc.name: n, vcol: vk, date.name: dval(date, jd), amount.name: amt}
+                    if cancel is not None:
+                        part[cancel.name] = cancelled
+                    if number is not None:
+                        part[number.name] = ref
+                    parts.append(part)
+                add(parts)
+                fin_keys[t] = [p[kc.name] for p in parts]
+                return True
+            if kind == "cheque":
+                date = find("issuedate", "date")
+                amount = find("amt", "amount")
+                remain = find("remain")
+                state = find("state")
+                cleared = find("clear", required=False, exclude=("state",))
+                instrument = find("tp", "type", required=False)
+                number = find("chqnumber", "number", required=False)
+                base = len(out)
+                # (vendor slot, issue date, face, remaining, state, clear date, cancelled)
+                spec = [
+                    (0, (1405, 5, 1), 4000000, 4000000, "open", None, 0),                 # fully open
+                    (0, (1405, 6, 15), 2500000, 2500000, "open", None, 0),                # fully open
+                    (0, (1405, 6, 25), 1500000, 1500000, "cleared", (1405, 7, 10), 0),    # cleared after month end
+                    (1, (1404, 9, 10), 3000000, 0, "cleared", (1405, 4, 20), 0),          # fully cleared
+                    (1, (1405, 6, 1), 7000000, 2000000, "open", None, 0),                 # candidate partial-pay row
+                    (2, (1405, 3, 3), 500000, 500000, "void", None, 1),                   # cancelled
+                ]
+                parts = []
+                for n, (slot, jd, face, rem, st, clear, cancelled) in enumerate(spec, base + 1):
+                    vk = vkeys[slot % len(vkeys)]
+                    part = {kc.name: n, vcol: vk, date.name: dval(date, jd),
+                            amount.name: face, remain.name: rem, state.name: st}
+                    if cancel is not None:
+                        part[cancel.name] = cancelled
+                    if cleared is not None and clear is not None:
+                        part[cleared.name] = dval(cleared, clear)
+                    elif cleared is not None:
+                        part[cleared.name] = None
+                    if instrument is not None:
+                        part[instrument.name] = "chq"
+                    if number is not None:
+                        part[number.name] = "CHQ-%04d" % n
+                    parts.append(part)
+                add(parts)
+                fin_keys[t] = [p[kc.name] for p in parts]
+                return True
+            if kind == "payment":
+                date = find("paydate", "date")
+                amount = find("amt", "amount")
+                instrument_col = find("tp", "type", required=False)
+                number = find("paynumber", "number", required=False)
+                link = find("chqid", "instrument", required=False)
+                cheque_keys = next((v for k, v in fin_keys.items()
+                                    if FINANCIAL_EXAMPLE.get(k[1].lower()) == "cheque"), None)
+                base = len(out)
+                # (vendor slot, date, amount, type, reference, cancelled); slot 1 = the vendor that also
+                # has payables in 1405/07 (the purchase scenario dates its documents in the same month).
+                spec = [
+                    (0, (1405, 6, 20), 600000, "transfer", "PAY-1004", 0),
+                    (0, (1405, 7, 12), 1750000, "cash", "PAY-1003", 0),
+                    (0, (1405, 5, 5), 100000, "cash", "PAY-1007", 1),      # cancelled
+                    (1, (1404, 9, 25), 3000000, "cheque", "PAY-1001", 0),   # settles the cleared cheque
+                    (1, (1405, 7, 8), 5000000, "cheque", "PAY-1002", 0),    # partial pay of the 7M cheque
+                    (1, (1405, 7, 21), 900000, "cash", "PAY-1006", 0),      # same month as PAYDOC-1006
+                ]
+                parts = []
+                for n, (slot, jd, amt, tp, ref, cancelled) in enumerate(spec, base + 1):
+                    vk = vkeys[slot % len(vkeys)]
+                    part = {kc.name: n, vcol: vk, date.name: dval(date, jd), amount.name: amt}
+                    if cancel is not None:
+                        part[cancel.name] = cancelled
+                    if instrument_col is not None:
+                        part[instrument_col.name] = tp
+                    if number is not None:
+                        part[number.name] = ref
+                    if link is not None and tp == "cheque" and cheque_keys and len(cheque_keys) >= 5:
+                        # the cheque payments settle slot 1's cleared cheque (key index 3) and its
+                        # partial-pay cheque (key index 4); cash and transfer payments carry no link.
+                        part[link.name] = str(cheque_keys[4] if ref == "PAY-1002" else cheque_keys[3])
+                    parts.append(part)
+                add(parts)
+                fin_keys[t] = [p[kc.name] for p in parts]
+                return True
+            # allocation: the split of one instrument across two vendors
+            instrument = find("chqid", "instrument")
+            amount = find("amt", "amount")
+            cheque_keys = next((v for k, v in fin_keys.items()
+                                if FINANCIAL_EXAMPLE.get(k[1].lower()) == "cheque"), None)
+            if not cheque_keys:
+                return False
+            parts = []
+            for n, slot in enumerate(range(2), len(out) + 1):
+                part = {kc.name: n, vcol: vkeys[slot % len(vkeys)],
+                        instrument.name: str(cheque_keys[4]), amount.name: 1000000}
+                parts.append(part)
+            add(parts)
+            fin_keys[t] = [p[kc.name] for p in parts]
+            return True
+        except KeyError:
+            return False
+
     # ---- lookup tables: real codes, loaded by 02a-lookups.sql, never generated
     lookup_tables = set()
     if lookups:
@@ -574,7 +766,7 @@ def run(capture, cfg, out_dir, db, selection=None, row_counts=None, lookups=None
                     todo.append(k)
 
     for t in order:
-        if t in lookup_tables or t in scen_tables or t in deferred:
+        if t in lookup_tables or t in scen_tables or t in deferred or t in fin_set:
             continue
         gen_table(t)
 
@@ -593,8 +785,17 @@ def run(capture, cfg, out_dir, db, selection=None, row_counts=None, lookups=None
             for i, part in enumerate(plist, 1):
                 rows[t].append(complete(t, part, i))
         for t in order:
-            if t in deferred:
+            if t in deferred and t not in fin_set:
                 gen_table(t)
+
+    # ---- example financials: made-up Sim* tables of the committed example capture (spec 008, T025).
+    # A scenario that already seeded a table keeps its rows; an unrecognised shape falls back to the
+    # generic filler, so a real capture is never seeded with the example values.
+    for t in fin_tables:
+        if rows[t] or t in lookup_tables or t in scen_tables:
+            continue
+        if not seed_financial_table(t, rows[t], fin_keys):
+            gen_table(t)
 
     for t in m.stubs:  # at least three keys per stub
         reg = stub_rows[t]

@@ -6,6 +6,7 @@ using System.Linq;
 using System.Text.Json.Serialization;
 using Zharfa.Api.Purchasing;
 using Zharfa.Api.Purchasing.Reports;
+using Zharfa.Api.VendorFinancials;
 
 public sealed record VisualColumnDto(
     [property: JsonPropertyName("id")] string Id,
@@ -19,7 +20,7 @@ public sealed record VisualCaptionsDto(
 public sealed record VisualChartSeriesDto(
     [property: JsonPropertyName("metric")] string Metric,
     [property: JsonPropertyName("label")] string Label,
-    [property: JsonPropertyName("values")] IReadOnlyList<string> Values);
+    [property: JsonPropertyName("values")] IReadOnlyList<string?> Values);
 
 public sealed record VisualChartDto(
     [property: JsonPropertyName("type")] string Type,
@@ -260,6 +261,33 @@ public static class VisualBuilder
                 break;
             }
 
+            case "vendor_financials_list":
+            {
+                primaryMetric = "vendorBalance";
+                primaryMetricLabel = "مانده تأمین‌کننده";
+                metricsCaption = "مانده تأمین‌کننده (ریال) و پرداخت‌های معوق";
+
+                columns.Add(new VisualColumnDto("name", "تأمین‌کننده"));
+                columns.Add(new VisualColumnDto("vendorBalance", "مانده تأمین‌کننده"));
+                columns.Add(new VisualColumnDto("outstandingPayments", "پرداخت‌های معوق"));
+
+                if (toolResult.RawResult is VendorFinancialsSummaryResponse summary)
+                {
+                    foreach (var r in summary.Rows)
+                    {
+                        var dict = new Dictionary<string, string?>
+                        {
+                            ["key"] = r.Key,
+                            ["name"] = r.Name,
+                            ["vendorBalance"] = r.VendorBalance,
+                            ["outstandingPayments"] = r.OutstandingPayments
+                        };
+                        rows.Add(dict);
+                    }
+                }
+                break;
+            }
+
             default:
                 return null;
         }
@@ -271,9 +299,9 @@ public static class VisualBuilder
 
         // 3. Chart series: bar chart when categories are in [2, 20]
         VisualChartDto? chart = null;
-        if (rows.Count >= 2 && rows.Count <= 20)
+        if (rows.Count >= 2 && rows.Count <= 20 && rows.Any(r => r.GetValueOrDefault(primaryMetric) != null))
         {
-            var values = rows.Select(r => r.GetValueOrDefault(primaryMetric) ?? "0").ToArray();
+            var values = rows.Select(r => r.GetValueOrDefault(primaryMetric)).ToArray();
             chart = new VisualChartDto(
                 Type: "bar",
                 CategoryId: "name",

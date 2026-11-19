@@ -211,6 +211,15 @@ tester — do not claim it was run here (there is no Docker daemon on this host)
 The desktop shell connects to this deployment by setting:
 `ZHARFA_FRONTEND_URL=http://localhost:8080` for the WebView2 shell.
 
+## Vendor Financials & Balance Reconciliation (Release 1, Phase 6)
+
+- Financials UI (`#/financials`) is visible only to roles with `vendor.financials` (`management`, `finance`).
+- Run vendor balance reconciliation against synced Mabna data:
+  ```bash
+  docker compose -f deploy/docker-compose.yml run --rm api reconcile vendor-balance --month 1405-08
+  ```
+- Demo mode allows `candidate` balance formulas for simulation. Production requires accounting-confirmed formulas; unconfirmed candidate formulas return «داده در دسترس نیست».
+
 ## Notes
 
 - Nothing here connects to any legacy system unless `ConnectionStrings__Mabna` is set in `deploy/.env`; left blank, the Mabna connector and the purchasing sync stay disabled.

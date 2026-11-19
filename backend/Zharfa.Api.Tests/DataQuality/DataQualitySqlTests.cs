@@ -13,12 +13,18 @@ public class DataQualitySqlTests
     private static DataQualityRule Rule(string id) => DataQualitySql.Rules.Single(rule => rule.Id == id);
 
     [Fact]
-    public void There_are_the_fifteen_rule_ids_of_the_data_model()
+    public void There_are_the_twenty_two_rule_ids_of_the_data_model()
     {
         var ids = DataQualitySql.Rules.Select(rule => rule.Id).ToArray();
 
         Assert.Equal(
-            new[] { "MV1", "MV2", "MV3", "MV4", "DU1", "BR1", "BR2", "BR3", "PI1", "DT1", "DT2", "QT1", "AM1", "AM2", "AM3" },
+            new[]
+            {
+                "MV1", "MV2", "MV3", "MV4", "DU1", "BR1", "BR2", "BR3", "PI1", "DT1", "DT2", "QT1",
+                "AM1", "AM2", "AM3",
+                // Phase 6 (spec 008): financial rules over the synced payables, cheques and payments.
+                "MV5", "BR4", "DT3", "DT4", "DT5", "AM4", "DU2",
+            },
             ids);
     }
 
@@ -38,6 +44,13 @@ public class DataQualitySqlTests
     [InlineData("AM1", "inconsistent-amounts", "line", "discount", "discount-exceeds-gross")]
     [InlineData("AM2", "inconsistent-amounts", "line", "vat", "negative-vat")]
     [InlineData("AM3", "inconsistent-amounts", "document", "document-discount", "doc-discount-exceeds-lines")]
+    [InlineData("MV5", "missing-values", "payable", "vendor", "missing")]
+    [InlineData("BR4", "broken-relationships", "payable", "vendor", "not-in-master")]
+    [InlineData("DT3", "invalid-dates", "payable", "date", "future")]
+    [InlineData("DT4", "invalid-dates", "payable", "date", "too-early")]
+    [InlineData("DT5", "invalid-dates", "payment", "date", "future")]
+    [InlineData("AM4", "inconsistent-amounts", "payable", "amount", "remaining-exceeds-face")]
+    [InlineData("DU2", "duplicate-records", "payment", "number", "duplicate-reference")]
     public void Each_rule_has_its_issue_type_kind_field_and_reason(string id, string issueType, string kind, string field, string reason)
     {
         var rule = Rule(id);
@@ -74,6 +87,8 @@ public class DataQualitySqlTests
     [InlineData("MV3", "@productMapped")]
     [InlineData("MV4", "@quantityMapped")]
     [InlineData("BR3", "@categoryMapped")]
+    [InlineData("MV5", "@financialVendorMapped")]
+    [InlineData("BR4", "@chequeVendorMapped")]
     public void Mapped_rules_bind_their_mapped_flag(string id, string flag)
     {
         Assert.Contains(flag, Rule(id).Sql, StringComparison.Ordinal);
@@ -106,6 +121,17 @@ public class DataQualitySqlTests
         foreach (var rule in DataQualitySql.Rules.Where(rule => rule.Id is not ("PI1" or "BR3")))
         {
             Assert.Contains("NOT d.cancelled", rule.Sql, StringComparison.Ordinal);
+        }
+    }
+
+    [Fact]
+    public void Financial_rules_carry_the_scope_columns_and_no_document_ids()
+    {
+        foreach (var rule in DataQualitySql.Rules.Where(rule => rule.RecordKind is "payable" or "payment"))
+        {
+            Assert.Contains("vendor_source_key", rule.Sql, StringComparison.Ordinal);
+            Assert.Contains("jalali_key", rule.Sql, StringComparison.Ordinal);
+            Assert.DoesNotContain("INSERT INTO mabna", rule.Sql, StringComparison.OrdinalIgnoreCase);
         }
     }
 

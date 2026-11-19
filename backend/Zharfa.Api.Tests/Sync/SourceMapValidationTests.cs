@@ -542,4 +542,271 @@ public class SourceMapValidationTests
 
         Assert.Empty(SourceMapValidator.Validate(map, ExamplePolicy()));
     }
+
+    // ---- Phase 6 (spec 008, T007): optional financial entities, balanceFormula, cheque type/state ----
+    // The example map gains the Phase 6 keys in US1 (T026); these tests insert the entities themselves when
+    // they are absent, so they hold before and after that change.
+
+    private static readonly string[] FinancialEntityNames =
+        ["payableDocument", "payableCheque", "vendorPayment", "paymentAllocation"];
+
+    private static JsonObject FinancialEntity(string name) => name switch
+    {
+        "payableDocument" => new JsonObject
+        {
+            ["object"] = "dbo.SimPayAccDoc",
+            ["kind"] = "table",
+            ["hostFiltered"] = false,
+            ["status"] = "candidate",
+            ["key"] = new JsonObject { ["column"] = "PayDocID", ["status"] = "candidate" },
+            ["vendorKey"] = new JsonObject { ["column"] = "VendorID", ["status"] = "candidate" },
+            ["date"] = new JsonObject { ["column"] = "SimDocDate", ["format"] = "jalaliText", ["status"] = "candidate" },
+            ["remainingAmount"] = new JsonObject { ["column"] = "RemainAmt", ["amountSign"] = "asIs", ["status"] = "candidate" },
+            ["number"] = new JsonObject { ["column"] = "SimDocNumber", ["status"] = "candidate" },
+            ["cancelled"] = new JsonObject { ["rule"] = "column", ["column"] = "IsCanceled", ["value"] = 1, ["status"] = "candidate" },
+            ["change"] = new JsonObject { ["strategy"] = "full" },
+        },
+        "payableCheque" => new JsonObject
+        {
+            ["object"] = "dbo.SimPayChq",
+            ["kind"] = "table",
+            ["hostFiltered"] = false,
+            ["status"] = "candidate",
+            ["key"] = new JsonObject { ["column"] = "ChqID", ["status"] = "candidate" },
+            ["vendorKey"] = new JsonObject { ["column"] = "VendorID", ["status"] = "candidate" },
+            ["date"] = new JsonObject { ["column"] = "SimIssueDate", ["format"] = "jalaliText", ["status"] = "candidate" },
+            ["amount"] = new JsonObject { ["column"] = "ChqAmt", ["amountSign"] = "asIs", ["status"] = "candidate" },
+            ["remainingAmount"] = new JsonObject { ["column"] = "RemainAmt", ["amountSign"] = "asIs", ["status"] = "candidate" },
+            ["instrumentType"] = new JsonObject { ["column"] = "ChqTp", ["status"] = "candidate" },
+            ["state"] = new JsonObject { ["column"] = "ChqState", ["status"] = "candidate" },
+            ["clearedAt"] = new JsonObject { ["column"] = "SimClearDate", ["format"] = "jalaliText", ["status"] = "candidate" },
+            ["number"] = new JsonObject { ["column"] = "SimChqNumber", ["status"] = "candidate" },
+            ["cancelled"] = new JsonObject { ["rule"] = "column", ["column"] = "IsCanceled", ["value"] = 1, ["status"] = "candidate" },
+            ["change"] = new JsonObject { ["strategy"] = "full" },
+        },
+        "vendorPayment" => new JsonObject
+        {
+            ["object"] = "dbo.SimVendorPay",
+            ["kind"] = "table",
+            ["hostFiltered"] = false,
+            ["status"] = "candidate",
+            ["key"] = new JsonObject { ["column"] = "PayID", ["status"] = "candidate" },
+            ["vendorKey"] = new JsonObject { ["column"] = "VendorID", ["status"] = "candidate" },
+            ["date"] = new JsonObject { ["column"] = "SimPayDate", ["format"] = "jalaliText", ["status"] = "candidate" },
+            ["amount"] = new JsonObject { ["column"] = "PayAmt", ["amountSign"] = "asIs", ["status"] = "candidate" },
+            ["instrumentType"] = new JsonObject { ["column"] = "PayTp", ["status"] = "candidate" },
+            ["number"] = new JsonObject { ["column"] = "SimPayNumber", ["status"] = "candidate" },
+            ["instrumentKey"] = new JsonObject { ["column"] = "SimChqID", ["status"] = "candidate" },
+            ["cancelled"] = new JsonObject { ["rule"] = "column", ["column"] = "IsCanceled", ["value"] = 1, ["status"] = "candidate" },
+            ["change"] = new JsonObject { ["strategy"] = "full" },
+        },
+        _ => new JsonObject
+        {
+            ["object"] = "dbo.SimPayAlloc",
+            ["kind"] = "table",
+            ["hostFiltered"] = false,
+            ["status"] = "candidate",
+            ["key"] = new JsonObject { ["column"] = "AllocID", ["status"] = "candidate" },
+            ["instrumentKey"] = new JsonObject { ["column"] = "SimChqID", ["status"] = "candidate" },
+            ["vendorKey"] = new JsonObject { ["column"] = "VendorID", ["status"] = "candidate" },
+            ["amount"] = new JsonObject { ["column"] = "AllocAmt", ["amountSign"] = "asIs", ["status"] = "candidate" },
+            ["change"] = new JsonObject { ["strategy"] = "full" },
+        },
+    };
+
+    /// <summary>Adds the four optional financial entities and the candidate formula when the map lacks them.</summary>
+    private static void EnsureFinancial(JsonObject root)
+    {
+        var entities = root["entities"]!.AsObject();
+        foreach (var name in FinancialEntityNames)
+        {
+            if (!entities.ContainsKey(name))
+            {
+                entities[name] = FinancialEntity(name);
+            }
+        }
+
+        if (!root.ContainsKey("balanceFormula"))
+        {
+            root["balanceFormula"] = new JsonObject
+            {
+                ["status"] = "candidate",
+                ["mix"] = "openPayablesPlusUnpaidCheques",
+            };
+        }
+    }
+
+    private static void RemoveFinancial(JsonObject root)
+    {
+        var entities = root["entities"]!.AsObject();
+        foreach (var name in FinancialEntityNames)
+        {
+            entities.Remove(name);
+        }
+
+        root.Remove("balanceFormula");
+        root.Remove("partialPayment");
+    }
+
+    [Fact]
+    public void Phase6_supported_version_stays_1()
+    {
+        Assert.Equal(1, SourceMap.SupportedVersion);
+
+        var map = LoadExample();
+        Assert.Equal(1, map.Version);
+    }
+
+    [Fact]
+    public void Optional_financial_entities_may_be_absent_and_the_map_stays_valid()
+    {
+        var map = LoadExampleWith(RemoveFinancial);
+
+        Assert.Empty(SourceMapValidator.Validate(map, ExamplePolicy()));
+        Assert.Null(map.BalanceFormula);
+        Assert.Null(map.PayableDocument);
+        Assert.Null(map.PayableCheque);
+        Assert.Null(map.VendorPayment);
+        Assert.Null(map.PaymentAllocation);
+    }
+
+    [Fact]
+    public void A_complete_phase6_map_validates()
+    {
+        var map = LoadExampleWith(EnsureFinancial);
+
+        Assert.Empty(SourceMapValidator.Validate(map, ExamplePolicy()));
+        Assert.Equal("openPayablesPlusUnpaidCheques", map.BalanceFormula!.Mix);
+        Assert.Equal("candidate", map.BalanceFormula.Status);
+    }
+
+    [Fact]
+    public void Financial_entity_with_host_filtered_true_is_rejected()
+    {
+        var map = LoadExampleWith(root =>
+        {
+            EnsureFinancial(root);
+            root["entities"]!["payableDocument"]!["hostFiltered"] = true;
+        });
+
+        var problems = SourceMapValidator.Validate(map, ExamplePolicy());
+
+        Assert.Contains(problems, p => p.Code == "host-filtered");
+    }
+
+    [Fact]
+    public void Financial_entity_object_must_be_on_the_allowlist()
+    {
+        var map = LoadExampleWith(root =>
+        {
+            EnsureFinancial(root);
+            root["entities"]!["vendorPayment"]!["object"] = "dbo.SimNotOnTheList";
+        });
+
+        var problems = SourceMapValidator.Validate(map, ExamplePolicy());
+
+        Assert.Contains(problems, p => p.Code == "object-not-allowlisted");
+    }
+
+    [Fact]
+    public void Unknown_balance_mix_is_rejected_as_balance_mix_unknown()
+    {
+        var map = LoadExampleWith(root =>
+        {
+            EnsureFinancial(root);
+            root["balanceFormula"]!["mix"] = "inventedMix";
+        });
+
+        var problems = SourceMapValidator.Validate(map, ExamplePolicy());
+
+        Assert.Contains(problems, p => p.Code == "balance-mix-unknown");
+    }
+
+    [Fact]
+    public void Known_balance_mix_passes_validation()
+    {
+        var map = LoadExampleWith(EnsureFinancial);
+
+        Assert.DoesNotContain(SourceMapValidator.Validate(map, ExamplePolicy()), p => p.Code == "balance-mix-unknown");
+    }
+
+    [Fact]
+    public void Absent_balance_formula_is_valid_and_only_makes_the_balance_unavailable()
+    {
+        var map = LoadExampleWith(root =>
+        {
+            EnsureFinancial(root);
+            root.Remove("balanceFormula");
+        });
+
+        Assert.DoesNotContain(SourceMapValidator.Validate(map, ExamplePolicy()), p => p.Code == "balance-mix-unknown");
+        Assert.Null(map.BalanceFormula);
+    }
+
+    [Fact]
+    public void Payable_cheque_without_instrument_type_or_state_is_rejected()
+    {
+        var map = LoadExampleWith(root =>
+        {
+            EnsureFinancial(root);
+            var cheque = root["entities"]!["payableCheque"]!.AsObject();
+            cheque.Remove("instrumentType");
+            cheque.Remove("state");
+        });
+
+        var problems = SourceMapValidator.Validate(map, ExamplePolicy());
+
+        Assert.Contains(problems, p => p.Code == "payable-cheque-type-state-missing");
+    }
+
+    [Fact]
+    public void Payable_cheque_with_explicit_unknown_type_and_state_is_valid()
+    {
+        var map = LoadExampleWith(root =>
+        {
+            EnsureFinancial(root);
+            root["entities"]!["payableCheque"]!["instrumentType"] = new JsonObject
+            {
+                ["column"] = null,
+                ["status"] = "unknown",
+            };
+            root["entities"]!["payableCheque"]!["state"] = new JsonObject
+            {
+                ["column"] = null,
+                ["status"] = "unknown",
+            };
+        });
+
+        Assert.DoesNotContain(
+            SourceMapValidator.Validate(map, ExamplePolicy()),
+            p => p.Code == "payable-cheque-type-state-missing");
+    }
+
+    [Fact]
+    public void Financial_amount_sign_is_validated()
+    {
+        var map = LoadExampleWith(root =>
+        {
+            EnsureFinancial(root);
+            root["entities"]!["payableDocument"]!["remainingAmount"]!["amountSign"] = "flip";
+        });
+
+        var problems = SourceMapValidator.Validate(map, ExamplePolicy());
+
+        Assert.Contains(problems, p => p.Code == "amount-sign-invalid");
+    }
+
+    [Fact]
+    public void Financial_columns_are_identifier_checked()
+    {
+        var map = LoadExampleWith(root =>
+        {
+            EnsureFinancial(root);
+            root["entities"]!["vendorPayment"]!["amount"]!["column"] = "Pay Amt; DROP";
+        });
+
+        var problems = SourceMapValidator.Validate(map, ExamplePolicy());
+
+        Assert.Contains(problems, p => p.Code == "column-invalid");
+    }
 }

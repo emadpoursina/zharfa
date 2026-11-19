@@ -72,6 +72,17 @@ public sealed class SyncRunner(NpgsqlDataSource dataSource, IMabnaReader reader)
             completed.Add(await SyncLinesAsync(run, cancellationToken));
             AfterTable(request, completed);
 
+            // Phase 6 (research R6): mapped vendor-financial entities sync in the SAME transaction, watermarks,
+            // reject budget and "failure keeps last good copy" rule. Unmapped entities are skipped (a
+            // purchasing-only install stays complete); a mapped entity that fails fails the whole run.
+            var financialMapping = new VendorFinancialMapping(request.Map, request.IsProduction);
+            var financialMapper = new VendorFinancialRowMapper(financialMapping);
+            foreach (var (table, source) in financialMapping.Sources)
+            {
+                completed.Add(await SyncFinancialAsync(run, table, source, financialMapper, cancellationToken));
+                AfterTable(request, completed);
+            }
+
             await RelinkAsync(connection, tx, cancellationToken);
             await tx.CommitAsync(cancellationToken);
             return new SyncRunResult(completed);
@@ -439,6 +450,163 @@ public sealed class SyncRunner(NpgsqlDataSource dataSource, IMabnaReader reader)
 
     // ---------------------------------------------------------------- lines
 
+    private async Task<SyncTableCounts> SyncFinancialAsync(
+        RunState run,
+        string table,
+        object source,
+        VendorFinancialRowMapper mapper,
+        CancellationToken cancellationToken)
+    {
+        var (objectName, columns, keyColumn, filters) = source switch
+        {
+            PayableDocumentSource d => (d.Object, d.Columns, d.Key, d.Filters),
+            PayableChequeSource c => (c.Object, c.Columns, c.Key, c.Filters),
+            VendorPaymentSource p => (p.Object, p.Columns, p.Key, p.Filters),
+            PaymentAllocationSource a => (a.Object, a.Columns, a.Key, Array.Empty<MabnaFilter>()),
+            _ => throw new InvalidOperationException("unknown financial source type"),
+        };
+
+        // Financial tables are small and read in full on every run (the masters' pattern): the key diff replaces
+        // changed rows and the staged keys delete rows that are gone or were rejected at the source.
+        var counters = new TableCounters(table);
+        var stageSql = StageFinancialSql(table);
+
+        await foreach (var page in run.Pager.ReadPagesAsync(
+                           new KeysetRequest(objectName, columns, keyColumn, filters),
+                           cancellationToken))
+        {
+            var batch = new List<(string Key, object Record)>(page.Count);
+            foreach (var row in page)
+            {
+                counters.Read++;
+                var keyText = PurchaseRowMapper.KeyText(row.Get(keyColumn));
+                var mapped = MapFinancial(row, source, mapper);
+                if (mapped.RejectReason is not null)
+                {
+                    counters.Reject(mapped.RejectReason, keyText);
+                    continue;
+                }
+
+                batch.Add((keyText!, mapped.Record!));
+            }
+
+            if (batch.Count == 0)
+            {
+                continue;
+            }
+
+            var (inserted, updated) = await UpsertFinancialAsync(run, table, batch, cancellationToken);
+            counters.Inserted += inserted;
+            counters.Updated += updated;
+            await StageKeysAsync(run, stageSql, batch.Select(item => item.Key).Distinct(StringComparer.Ordinal).ToArray(), cancellationToken);
+        }
+
+        counters.EnsureWithinRejectLimit(run.Request.MaxRejectedRows);
+
+        await using (var delete = Cmd(run.Connection, run.Tx, DeleteUnseenFinancialSql(table)))
+        {
+            counters.Deleted = Convert.ToInt32(await delete.ExecuteScalarAsync(cancellationToken));
+        }
+
+        await SaveStateAsync(run, table, new ChangeMarker(ChangeStrategy.Full, null), null, fullRead: true,
+            run.StateOf(table), cancellationToken);
+        return counters.ToCounts();
+    }
+
+    private static MappedRow<object> MapFinancial(SourceRow row, object source, VendorFinancialRowMapper mapper) =>
+        source switch
+        {
+            PayableDocumentSource => Wrap(mapper.MapPayableDocument(row)),
+            PayableChequeSource => Wrap(mapper.MapPayableCheque(row)),
+            VendorPaymentSource => Wrap(mapper.MapVendorPayment(row)),
+            PaymentAllocationSource => Wrap(mapper.MapPaymentAllocation(row)),
+            _ => new MappedRow<object>(null, "source-unknown"),
+        };
+
+    private static MappedRow<object> Wrap<T>(MappedRow<T> mapped) where T : class =>
+        new(mapped.Record, mapped.RejectReason, mapped.Warning);
+
+    private static async Task<(int Inserted, int Updated)> UpsertFinancialAsync(
+        RunState run,
+        string table,
+        List<(string Key, object Record)> batch,
+        CancellationToken cancellationToken)
+    {
+        var cmd = Cmd(run.Connection, run.Tx, UpsertFinancialSql(table));
+        cmd.Parameters.AddWithValue("synced_at", run.Request.StartedAt);
+        switch (table)
+        {
+            case LogicalTables.PayableDocument:
+            {
+                var rows = batch.Select(item => (PayableDocumentRecord)item.Record).ToList();
+                cmd.Parameters.AddWithValue("keys", rows.Select(r => r.SourceKey).ToArray());
+                cmd.Parameters.AddWithValue("vendors", rows.Select(r => r.VendorSourceKey).ToArray());
+                cmd.Parameters.AddWithValue("dates", rows.Select(r => r.DocDate.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture)).ToArray());
+                cmd.Parameters.AddWithValue("jys", rows.Select(r => r.JalaliYear.ToString(CultureInfo.InvariantCulture)).ToArray());
+                cmd.Parameters.AddWithValue("jms", rows.Select(r => r.JalaliMonth.ToString(CultureInfo.InvariantCulture)).ToArray());
+                cmd.Parameters.AddWithValue("jds", rows.Select(r => r.JalaliDay.ToString(CultureInfo.InvariantCulture)).ToArray());
+                cmd.Parameters.AddWithValue("numbers", rows.Select(r => r.DocNumber).ToArray());
+                cmd.Parameters.AddWithValue("remainings", rows.Select(r => r.RemainingAmount.ToString(CultureInfo.InvariantCulture)).ToArray());
+                cmd.Parameters.AddWithValue("cancelled", rows.Select(r => r.Cancelled ? "true" : "false").ToArray());
+                break;
+            }
+
+            case LogicalTables.PayableCheque:
+            {
+                var rows = batch.Select(item => (PayableChequeRecord)item.Record).ToList();
+                cmd.Parameters.AddWithValue("keys", rows.Select(r => r.SourceKey).ToArray());
+                cmd.Parameters.AddWithValue("vendors", rows.Select(r => r.VendorSourceKey).ToArray());
+                cmd.Parameters.AddWithValue("dates", rows.Select(r => r.IssueDate.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture)).ToArray());
+                cmd.Parameters.AddWithValue("jys", rows.Select(r => r.JalaliYear.ToString(CultureInfo.InvariantCulture)).ToArray());
+                cmd.Parameters.AddWithValue("jms", rows.Select(r => r.JalaliMonth.ToString(CultureInfo.InvariantCulture)).ToArray());
+                cmd.Parameters.AddWithValue("jds", rows.Select(r => r.JalaliDay.ToString(CultureInfo.InvariantCulture)).ToArray());
+                cmd.Parameters.AddWithValue("references", rows.Select(r => r.Reference).ToArray());
+                cmd.Parameters.AddWithValue("types", rows.Select(r => r.InstrumentType).ToArray());
+                cmd.Parameters.AddWithValue("states", rows.Select(r => r.State).ToArray());
+                cmd.Parameters.AddWithValue("amounts", rows.Select(r => r.Amount.ToString(CultureInfo.InvariantCulture)).ToArray());
+                cmd.Parameters.AddWithValue("remainings", rows.Select(r => r.RemainingAmount.ToString(CultureInfo.InvariantCulture)).ToArray());
+                cmd.Parameters.AddWithValue("cleared", rows.Select(r => r.ClearedAt?.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture)).ToArray());
+                cmd.Parameters.AddWithValue("cancelled", rows.Select(r => r.Cancelled ? "true" : "false").ToArray());
+                break;
+            }
+
+            case LogicalTables.VendorPayment:
+            {
+                var rows = batch.Select(item => (VendorPaymentRecord)item.Record).ToList();
+                cmd.Parameters.AddWithValue("keys", rows.Select(r => r.SourceKey).ToArray());
+                cmd.Parameters.AddWithValue("vendors", rows.Select(r => r.VendorSourceKey).ToArray());
+                cmd.Parameters.AddWithValue("dates", rows.Select(r => r.PaidAt.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture)).ToArray());
+                cmd.Parameters.AddWithValue("jys", rows.Select(r => r.JalaliYear.ToString(CultureInfo.InvariantCulture)).ToArray());
+                cmd.Parameters.AddWithValue("jms", rows.Select(r => r.JalaliMonth.ToString(CultureInfo.InvariantCulture)).ToArray());
+                cmd.Parameters.AddWithValue("jds", rows.Select(r => r.JalaliDay.ToString(CultureInfo.InvariantCulture)).ToArray());
+                cmd.Parameters.AddWithValue("references", rows.Select(r => r.Reference).ToArray());
+                cmd.Parameters.AddWithValue("types", rows.Select(r => r.InstrumentType).ToArray());
+                cmd.Parameters.AddWithValue("amounts", rows.Select(r => r.Amount.ToString(CultureInfo.InvariantCulture)).ToArray());
+                cmd.Parameters.AddWithValue("instruments", rows.Select(r => r.InstrumentSourceKey).ToArray());
+                cmd.Parameters.AddWithValue("cancelled", rows.Select(r => r.Cancelled ? "true" : "false").ToArray());
+                break;
+            }
+
+            case LogicalTables.PaymentAllocation:
+            {
+                var rows = batch.Select(item => (PaymentAllocationRecord)item.Record).ToList();
+                cmd.Parameters.AddWithValue("keys", rows.Select(r => r.SourceKey).ToArray());
+                cmd.Parameters.AddWithValue("instruments", rows.Select(r => r.InstrumentSourceKey).ToArray());
+                cmd.Parameters.AddWithValue("vendors", rows.Select(r => r.VendorSourceKey).ToArray());
+                cmd.Parameters.AddWithValue("amounts", rows.Select(r => r.Amount.ToString(CultureInfo.InvariantCulture)).ToArray());
+                break;
+            }
+
+            default:
+                throw new InvalidOperationException("unknown financial table " + table);
+        }
+
+        await using (cmd)
+        {
+            return await ReadCountsAsync(cmd, cancellationToken);
+        }
+    }
+
     private async Task<SyncTableCounts> SyncLinesAsync(RunState run, CancellationToken cancellationToken)
     {
         var source = run.Mapping.Line;
@@ -641,9 +809,31 @@ public sealed class SyncRunner(NpgsqlDataSource dataSource, IMabnaReader reader)
             await vendors.ExecuteNonQueryAsync(cancellationToken);
         }
 
-        await using var products = Cmd(connection, tx, RelinkProductSql);
-        await products.ExecuteNonQueryAsync(cancellationToken);
+        await using (var products = Cmd(connection, tx, RelinkProductSql))
+        {
+            await products.ExecuteNonQueryAsync(cancellationToken);
+        }
+
+        // Phase 6: the financial tables also hold the source vendor key; ids follow the final master.
+        foreach (var sql in RelinkFinancialSqls)
+        {
+            await using var financial = Cmd(connection, tx, sql);
+            await financial.ExecuteNonQueryAsync(cancellationToken);
+        }
     }
+
+    private static readonly string[] RelinkFinancialSqls =
+    [
+        "UPDATE mabna.payable_document d " +
+        "SET vendor_id = (SELECT v.vendor_id FROM mabna.vendor v WHERE v.source_key = d.vendor_source_key) " +
+        "WHERE d.vendor_id IS DISTINCT FROM (SELECT v.vendor_id FROM mabna.vendor v WHERE v.source_key = d.vendor_source_key)",
+        "UPDATE mabna.payable_cheque c " +
+        "SET vendor_id = (SELECT v.vendor_id FROM mabna.vendor v WHERE v.source_key = c.vendor_source_key) " +
+        "WHERE c.vendor_id IS DISTINCT FROM (SELECT v.vendor_id FROM mabna.vendor v WHERE v.source_key = c.vendor_source_key)",
+        "UPDATE mabna.vendor_payment p " +
+        "SET vendor_id = (SELECT v.vendor_id FROM mabna.vendor v WHERE v.source_key = p.vendor_source_key) " +
+        "WHERE p.vendor_id IS DISTINCT FROM (SELECT v.vendor_id FROM mabna.vendor v WHERE v.source_key = p.vendor_source_key)",
+    ];
 
     private static NpgsqlCommand Cmd(NpgsqlConnection connection, NpgsqlTransaction tx, string sql) =>
         new(sql, connection, tx);
@@ -865,6 +1055,10 @@ public sealed class SyncRunner(NpgsqlDataSource dataSource, IMabnaReader reader)
         CREATE TEMP TABLE stage_category (source_key text PRIMARY KEY) ON COMMIT DROP;
         CREATE TEMP TABLE stage_document (doc_type text NOT NULL, source_key text NOT NULL, PRIMARY KEY (doc_type, source_key)) ON COMMIT DROP;
         CREATE TEMP TABLE stage_line (document_id bigint NOT NULL, source_key text NOT NULL, PRIMARY KEY (document_id, source_key)) ON COMMIT DROP;
+        CREATE TEMP TABLE stage_payable_document (source_key text PRIMARY KEY) ON COMMIT DROP;
+        CREATE TEMP TABLE stage_payable_cheque (source_key text PRIMARY KEY) ON COMMIT DROP;
+        CREATE TEMP TABLE stage_vendor_payment (source_key text PRIMARY KEY) ON COMMIT DROP;
+        CREATE TEMP TABLE stage_payment_allocation (source_key text PRIMARY KEY) ON COMMIT DROP;
         """;
 
     private const string StageVendorSql =
@@ -881,6 +1075,151 @@ public sealed class SyncRunner(NpgsqlDataSource dataSource, IMabnaReader reader)
 
     private const string StageLineSql =
         "INSERT INTO stage_line (document_id, source_key) SELECT d::bigint, k FROM unnest(@docs::text[], @keys::text[]) AS x(d, k) ON CONFLICT DO NOTHING";
+
+    /// <summary>Stage table of a financial table (a fixed name of the four Phase 6 tables, never user input).</summary>
+    private static string StageFinancialSql(string table) =>
+        "INSERT INTO stage_" + table + " (source_key) SELECT k FROM unnest(@keys::text[]) AS x(k) ON CONFLICT DO NOTHING";
+
+    /// <summary>Deletes the rows of a financial table this run did not stage (gone at the source, or rejected).</summary>
+    private static string DeleteUnseenFinancialSql(string table) =>
+        "WITH gone AS (DELETE FROM mabna." + table + " t " +
+        "WHERE NOT EXISTS (SELECT 1 FROM stage_" + table + " s WHERE s.source_key = t.source_key) " +
+        "RETURNING 1) SELECT count(*) FROM gone";
+
+    /// <summary>Upsert of a financial table by source_key; changed rows are updated, unchanged rows keep their copy.</summary>
+    private static string UpsertFinancialSql(string table) => table switch
+    {
+        LogicalTables.PayableDocument => """
+            WITH up AS (
+                INSERT INTO mabna.payable_document
+                    (source_key, vendor_source_key, doc_date, jalali_year, jalali_month, jalali_day,
+                     doc_number, remaining_amount, cancelled, synced_at)
+                SELECT k, vk, d::date, jy::smallint, jm::smallint, jd::smallint, n, r::numeric, c::boolean, @synced_at
+                FROM unnest(@keys::text[], @vendors::text[], @dates::text[], @jys::text[], @jms::text[], @jds::text[],
+                            @numbers::text[], @remainings::text[], @cancelled::text[])
+                    AS x(k, vk, d, jy, jm, jd, n, r, c)
+                ON CONFLICT (source_key) DO UPDATE
+                    SET vendor_source_key = EXCLUDED.vendor_source_key,
+                        doc_date = EXCLUDED.doc_date,
+                        jalali_year = EXCLUDED.jalali_year,
+                        jalali_month = EXCLUDED.jalali_month,
+                        jalali_day = EXCLUDED.jalali_day,
+                        doc_number = EXCLUDED.doc_number,
+                        remaining_amount = EXCLUDED.remaining_amount,
+                        cancelled = EXCLUDED.cancelled,
+                        synced_at = EXCLUDED.synced_at
+                    WHERE (mabna.payable_document.vendor_source_key, mabna.payable_document.doc_date,
+                           mabna.payable_document.jalali_year, mabna.payable_document.jalali_month,
+                           mabna.payable_document.jalali_day, mabna.payable_document.doc_number,
+                           mabna.payable_document.remaining_amount, mabna.payable_document.cancelled)
+                          IS DISTINCT FROM
+                          (EXCLUDED.vendor_source_key, EXCLUDED.doc_date, EXCLUDED.jalali_year,
+                           EXCLUDED.jalali_month, EXCLUDED.jalali_day, EXCLUDED.doc_number,
+                           EXCLUDED.remaining_amount, EXCLUDED.cancelled)
+                RETURNING (xmax = 0) AS inserted
+            )
+            SELECT count(*) FILTER (WHERE inserted), count(*) FILTER (WHERE NOT inserted) FROM up
+            """,
+
+        LogicalTables.PayableCheque => """
+            WITH up AS (
+                INSERT INTO mabna.payable_cheque
+                    (source_key, vendor_source_key, issue_date, jalali_year, jalali_month, jalali_day,
+                     reference, instrument_type, state, amount, remaining_amount, cleared_at, cancelled, synced_at)
+                SELECT k, vk, d::date, jy::smallint, jm::smallint, jd::smallint, rf, it, st, a::numeric, r::numeric,
+                       ca::date, c::boolean, @synced_at
+                FROM unnest(@keys::text[], @vendors::text[], @dates::text[], @jys::text[], @jms::text[], @jds::text[],
+                            @references::text[], @types::text[], @states::text[], @amounts::text[], @remainings::text[],
+                            @cleared::text[], @cancelled::text[])
+                    AS x(k, vk, d, jy, jm, jd, rf, it, st, a, r, ca, c)
+                ON CONFLICT (source_key) DO UPDATE
+                    SET vendor_source_key = EXCLUDED.vendor_source_key,
+                        issue_date = EXCLUDED.issue_date,
+                        jalali_year = EXCLUDED.jalali_year,
+                        jalali_month = EXCLUDED.jalali_month,
+                        jalali_day = EXCLUDED.jalali_day,
+                        reference = EXCLUDED.reference,
+                        instrument_type = EXCLUDED.instrument_type,
+                        state = EXCLUDED.state,
+                        amount = EXCLUDED.amount,
+                        remaining_amount = EXCLUDED.remaining_amount,
+                        cleared_at = EXCLUDED.cleared_at,
+                        cancelled = EXCLUDED.cancelled,
+                        synced_at = EXCLUDED.synced_at
+                    WHERE (mabna.payable_cheque.vendor_source_key, mabna.payable_cheque.issue_date,
+                           mabna.payable_cheque.jalali_year, mabna.payable_cheque.jalali_month,
+                           mabna.payable_cheque.jalali_day, mabna.payable_cheque.reference,
+                           mabna.payable_cheque.instrument_type, mabna.payable_cheque.state,
+                           mabna.payable_cheque.amount, mabna.payable_cheque.remaining_amount,
+                           mabna.payable_cheque.cleared_at, mabna.payable_cheque.cancelled)
+                          IS DISTINCT FROM
+                          (EXCLUDED.vendor_source_key, EXCLUDED.issue_date, EXCLUDED.jalali_year,
+                           EXCLUDED.jalali_month, EXCLUDED.jalali_day, EXCLUDED.reference,
+                           EXCLUDED.instrument_type, EXCLUDED.state, EXCLUDED.amount,
+                           EXCLUDED.remaining_amount, EXCLUDED.cleared_at, EXCLUDED.cancelled)
+                RETURNING (xmax = 0) AS inserted
+            )
+            SELECT count(*) FILTER (WHERE inserted), count(*) FILTER (WHERE NOT inserted) FROM up
+            """,
+
+        LogicalTables.VendorPayment => """
+            WITH up AS (
+                INSERT INTO mabna.vendor_payment
+                    (source_key, vendor_source_key, paid_at, jalali_year, jalali_month, jalali_day,
+                     reference, instrument_type, amount, instrument_source_key, cancelled, synced_at)
+                SELECT k, vk, d::date, jy::smallint, jm::smallint, jd::smallint, rf, it, a::numeric, ik, c::boolean, @synced_at
+                FROM unnest(@keys::text[], @vendors::text[], @dates::text[], @jys::text[], @jms::text[], @jds::text[],
+                            @references::text[], @types::text[], @amounts::text[], @instruments::text[], @cancelled::text[])
+                    AS x(k, vk, d, jy, jm, jd, rf, it, a, ik, c)
+                ON CONFLICT (source_key) DO UPDATE
+                    SET vendor_source_key = EXCLUDED.vendor_source_key,
+                        paid_at = EXCLUDED.paid_at,
+                        jalali_year = EXCLUDED.jalali_year,
+                        jalali_month = EXCLUDED.jalali_month,
+                        jalali_day = EXCLUDED.jalali_day,
+                        reference = EXCLUDED.reference,
+                        instrument_type = EXCLUDED.instrument_type,
+                        amount = EXCLUDED.amount,
+                        instrument_source_key = EXCLUDED.instrument_source_key,
+                        cancelled = EXCLUDED.cancelled,
+                        synced_at = EXCLUDED.synced_at
+                    WHERE (mabna.vendor_payment.vendor_source_key, mabna.vendor_payment.paid_at,
+                           mabna.vendor_payment.jalali_year, mabna.vendor_payment.jalali_month,
+                           mabna.vendor_payment.jalali_day, mabna.vendor_payment.reference,
+                           mabna.vendor_payment.instrument_type, mabna.vendor_payment.amount,
+                           mabna.vendor_payment.instrument_source_key, mabna.vendor_payment.cancelled)
+                          IS DISTINCT FROM
+                          (EXCLUDED.vendor_source_key, EXCLUDED.paid_at, EXCLUDED.jalali_year,
+                           EXCLUDED.jalali_month, EXCLUDED.jalali_day, EXCLUDED.reference,
+                           EXCLUDED.instrument_type, EXCLUDED.amount, EXCLUDED.instrument_source_key,
+                           EXCLUDED.cancelled)
+                RETURNING (xmax = 0) AS inserted
+            )
+            SELECT count(*) FILTER (WHERE inserted), count(*) FILTER (WHERE NOT inserted) FROM up
+            """,
+
+        LogicalTables.PaymentAllocation => """
+            WITH up AS (
+                INSERT INTO mabna.payment_allocation
+                    (source_key, instrument_source_key, vendor_source_key, amount, synced_at)
+                SELECT k, ik, vk, a::numeric, @synced_at
+                FROM unnest(@keys::text[], @instruments::text[], @vendors::text[], @amounts::text[]) AS x(k, ik, vk, a)
+                ON CONFLICT (source_key) DO UPDATE
+                    SET instrument_source_key = EXCLUDED.instrument_source_key,
+                        vendor_source_key = EXCLUDED.vendor_source_key,
+                        amount = EXCLUDED.amount,
+                        synced_at = EXCLUDED.synced_at
+                    WHERE (mabna.payment_allocation.instrument_source_key, mabna.payment_allocation.vendor_source_key,
+                           mabna.payment_allocation.amount)
+                          IS DISTINCT FROM
+                          (EXCLUDED.instrument_source_key, EXCLUDED.vendor_source_key, EXCLUDED.amount)
+                RETURNING (xmax = 0) AS inserted
+            )
+            SELECT count(*) FILTER (WHERE inserted), count(*) FILTER (WHERE NOT inserted) FROM up
+            """,
+
+        _ => throw new InvalidOperationException("unknown financial table " + table),
+    };
 
     private const string UpsertVendorSql = """
         WITH up AS (

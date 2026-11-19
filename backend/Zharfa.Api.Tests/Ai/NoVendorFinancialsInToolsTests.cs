@@ -8,6 +8,10 @@ using System.Text.RegularExpressions;
 using Xunit;
 using Zharfa.Api.Ai;
 
+/// <summary>
+/// Verifies that purchasing analyst tools contain no vendor financial tokens.
+/// Note (Phase 6, T045/T065): Financial tools live strictly in Zharfa.Api.Ai.VendorFinancialAnalystTools, never here.
+/// </summary>
 public class NoVendorFinancialsInToolsTests
 {
     private static readonly string[] ForbiddenTokens =
