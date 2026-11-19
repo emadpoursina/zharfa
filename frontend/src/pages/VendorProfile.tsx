@@ -1,18 +1,20 @@
 import { useEffect, useState } from 'react';
 import {
   getPurchasing,
+  downloadReportExport,
   type DocumentRow,
   type ReportPrint,
   type ReportTable,
   type VendorProfile as VendorProfileData,
 } from '../services/api';
-import { periodParams, type PageSize, type PeriodValue } from '../hooks/useReportQuery';
+import { canonicalPeriod, periodParams, type PageSize, type PeriodValue } from '../hooks/useReportQuery';
 import { DataQualityNotice } from '../components/DataQualityNotice';
 import { DocumentLinesPanel } from '../components/DocumentLinesPanel';
 import { KpiCard } from '../components/KpiCard';
 import { PeriodPicker } from '../components/PeriodPicker';
 import { Pager } from '../components/Pager';
 import { PrintReport } from '../components/PrintReport';
+import { SaveReportDialog } from '../components/SaveReportDialog';
 import { ReportStatusLine, ReportTable as Table, type ReportColumn } from '../components/ReportTable';
 import { TrendChart } from '../components/TrendChart';
 import { UnavailableNote } from '../components/UnavailableNote';
@@ -26,6 +28,7 @@ interface VendorProfileProps {
   initialPeriod: PeriodValue;
   onBack: () => void;
   showLink?: boolean;
+  canExport?: boolean;
 }
 
 const documentColumns: ReportColumn<DocumentRow>[] = [
@@ -44,7 +47,7 @@ const documentColumns: ReportColumn<DocumentRow>[] = [
  * with the previous period (both labels), the 12-month trend, top products, returns, and the paged documents whose rows
  * expand to their lines. No balance, payment or credit figure exists here (FR-012).
  */
-export function VendorProfile({ vendor, serverToday, initialPeriod, onBack, showLink }: VendorProfileProps) {
+export function VendorProfile({ vendor, serverToday, initialPeriod, onBack, showLink, canExport = false }: VendorProfileProps) {
   const [period, setPeriod] = useState<PeriodValue>(initialPeriod);
   const [profile, setProfile] = useState<VendorProfileData | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -56,6 +59,25 @@ export function VendorProfile({ vendor, serverToday, initialPeriod, onBack, show
   const [expandedDoc, setExpandedDoc] = useState<number | null>(null);
   const [printDocs, setPrintDocs] = useState<ReportPrint<DocumentRow> | null>(null);
   const [printError, setPrintError] = useState<string | null>(null);
+  const [saveOpen, setSaveOpen] = useState(false);
+  const [exporting, setExporting] = useState(false);
+  const [exportError, setExportError] = useState<string | null>(null);
+
+  const exportNow = async () => {
+    setExporting(true);
+    setExportError(null);
+    try {
+      await downloadReportExport('vendor-profile', {
+        vendor: vendor.key,
+        table: 'documents',
+        ...periodQuery,
+      });
+    } catch (caught) {
+      setExportError(caught instanceof Error ? caught.message : 'دریافت خروجی اکسل انجام نشد.');
+    } finally {
+      setExporting(false);
+    }
+  };
 
   const periodQuery = periodParams(period);
   const periodKey = JSON.stringify(periodQuery);
@@ -260,16 +282,47 @@ export function VendorProfile({ vendor, serverToday, initialPeriod, onBack, show
           <h3 id="documents-title" className="text-base font-semibold text-gray-900">
             اسناد تأمین‌کننده در این دوره
           </h3>
-          <button
-            type="button"
-            onClick={printDocuments}
-            className="rounded-lg border border-gray-300 bg-white px-3 py-1.5 text-sm font-medium text-gray-800 hover:bg-gray-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-600 cursor-pointer"
-          >
-            چاپ اسناد
-          </button>
+          <div className="flex gap-2">
+            <button
+              type="button"
+              onClick={() => setSaveOpen(true)}
+              className="rounded-lg border border-gray-300 bg-white px-3 py-1.5 text-sm font-medium text-gray-800 hover:bg-gray-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-600 cursor-pointer"
+            >
+              ذخیره گزارش
+            </button>
+            {canExport && (
+              <button
+                type="button"
+                onClick={exportNow}
+                disabled={exporting}
+                className="rounded-lg border border-emerald-300 bg-emerald-50 px-3 py-1.5 text-sm font-medium text-emerald-800 hover:bg-emerald-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-600 disabled:opacity-50 cursor-pointer"
+              >
+                {exporting ? 'در حال دریافت...' : 'خروجی اکسل'}
+              </button>
+            )}
+            <button
+              type="button"
+              onClick={printDocuments}
+              className="rounded-lg border border-gray-300 bg-white px-3 py-1.5 text-sm font-medium text-gray-800 hover:bg-gray-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-600 cursor-pointer"
+            >
+              چاپ اسناد
+            </button>
+          </div>
         </div>
+        {exportError && <p role="alert" className="text-sm text-red-700">{exportError}</p>}
         {printError && <p role="alert" className="text-sm text-red-700">{printError}</p>}
         {docError && <p role="alert" className="text-sm text-red-700">{docError}</p>}
+
+        {saveOpen && (
+          <SaveReportDialog
+            open={saveOpen}
+            kind="vendor-profile"
+            defaultName={`اسناد ${vendor.name}`}
+            period={canonicalPeriod(period)}
+            filters={{ vendor: vendor.key, profileTable: 'documents' }}
+            onClose={() => setSaveOpen(false)}
+          />
+        )}
         {docs && (
           <>
             <Table

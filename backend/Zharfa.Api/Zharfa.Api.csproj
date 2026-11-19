@@ -14,6 +14,8 @@
          SQL Server; System.Data.SqlClient is deprecated and EF Core is unnecessary for a
          structured read gateway. Latest stable 7.x; used only by Mabna/MabnaReader. -->
     <PackageReference Include="Microsoft.Data.SqlClient" Version="7.1.2" />
+    <!-- PRD §9 F16 library for server-side RTL Persian Excel export (research R8). -->
+    <PackageReference Include="ClosedXML" Version="0.105.1" />
   </ItemGroup>
 
 </Project>

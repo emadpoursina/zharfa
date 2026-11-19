@@ -103,6 +103,7 @@ public class DemoOnlyFilterTests
 
         Assert.True(modules.Overview);
         Assert.True(modules.PurchasingReports);
+        Assert.True(modules.SavedReports);
         Assert.True(modules.DataSync);
         Assert.True(modules.Users);
         Assert.True(modules.AuditLog);
@@ -119,6 +120,7 @@ public class DemoOnlyFilterTests
 
         Assert.True(modules.Overview);
         Assert.True(modules.PurchasingReports);
+        Assert.True(modules.SavedReports);
         Assert.True(modules.Ai);
         Assert.False(modules.DataSync);
         Assert.False(modules.Users);
@@ -134,6 +136,8 @@ public class DemoOnlyFilterTests
         var modules = SystemModules.For(Production, RolePermissions.For(Roles.Management));
 
         Assert.True(modules.Ai);
+        Assert.True(modules.PurchasingReports);
+        Assert.True(modules.SavedReports);
         Assert.False(modules.AiSettings);
         Assert.False(modules.DemoPages);
         Assert.False(modules.DataSync);
@@ -148,6 +152,7 @@ public class DemoOnlyFilterTests
         var modules = SystemModules.For(Demo, RolePermissions.For(Roles.Admin));
 
         Assert.True(modules.DemoPages);
+        Assert.True(modules.SavedReports);
         Assert.False(modules.Ai);
         Assert.True(modules.DataSync);
         Assert.True(modules.AiSettings);
@@ -159,6 +164,8 @@ public class DemoOnlyFilterTests
         var modules = SystemModules.For(Demo, RolePermissions.For(Roles.Management));
 
         Assert.True(modules.Ai);
+        Assert.True(modules.PurchasingReports);
+        Assert.True(modules.SavedReports);
         Assert.True(modules.DemoPages);
         Assert.False(modules.DataSync);
         Assert.False(modules.Users);
@@ -177,10 +184,27 @@ public class DemoOnlyFilterTests
         Assert.False(modules.DemoPages);
         Assert.False(modules.Ai);
         Assert.False(modules.PurchasingReports);
+        Assert.False(modules.SavedReports);
         Assert.False(modules.Users);
         Assert.False(modules.AuditLog);
         Assert.False(modules.DataQuality);
         Assert.False(modules.AiSettings);
+    }
+
+    [Fact]
+    public void SavedReports_module_is_true_iff_purchasing_reports_permission_is_granted()
+    {
+        var adminModules = SystemModules.For(Production, RolePermissions.For(Roles.Admin));
+        var purchasingModules = SystemModules.For(Production, RolePermissions.For(Roles.Purchasing));
+        var financeModules = SystemModules.For(Production, RolePermissions.For(Roles.Finance));
+        var emptyModules = SystemModules.For(Production, new HashSet<string>());
+        var demoAdminModules = SystemModules.For(Demo, RolePermissions.For(Roles.Admin));
+
+        Assert.True(adminModules.SavedReports);
+        Assert.True(purchasingModules.SavedReports);
+        Assert.True(financeModules.SavedReports);
+        Assert.False(emptyModules.SavedReports);
+        Assert.True(demoAdminModules.SavedReports);
     }
 
     // ---- AI payload labels (FR-022, contracts/api.md §5) ----

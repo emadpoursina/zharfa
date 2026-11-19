@@ -41,20 +41,33 @@ public class PermissionMatrixTests
 
         ["PurchasingReportsController.Report"] = [Permissions.PurchasingReports],
         ["PurchasingReportsController.ReportPrint"] = [Permissions.PurchasingReports],
+        ["PurchasingReportsController.ReportExport"] = [Permissions.PurchasingReports, Permissions.Export],
         ["PurchasingReportsController.Documents"] = [Permissions.PurchasingReports, Permissions.PurchasingTransactions],
         ["PurchasingReportsController.DocumentsPrint"] = [Permissions.PurchasingReports, Permissions.PurchasingTransactions],
+        ["PurchasingReportsController.DocumentsExport"] = [Permissions.PurchasingReports, Permissions.PurchasingTransactions, Permissions.Export],
         ["PurchasingReportsController.DocumentLines"] = [Permissions.PurchasingReports, Permissions.PurchasingTransactions],
         ["PurchasingReportsController.Lookup"] = [Permissions.PurchasingReports],
         ["PurchasingReportsController.Vendors"] = [Permissions.PurchasingReports],
         ["PurchasingReportsController.VendorsPrint"] = [Permissions.PurchasingReports],
+        ["PurchasingReportsController.VendorsExport"] = [Permissions.PurchasingReports, Permissions.Export],
         ["PurchasingReportsController.VendorProfile"] = [Permissions.PurchasingReports],
+        ["PurchasingReportsController.VendorProfileExport"] = [Permissions.PurchasingReports, Permissions.Export],
         ["PurchasingReportsController.VendorCompare"] = [Permissions.PurchasingReports],
         ["PurchasingReportsController.VendorComparePrint"] = [Permissions.PurchasingReports],
+        ["PurchasingReportsController.VendorCompareExport"] = [Permissions.PurchasingReports, Permissions.Export],
 
         ["VendorFinancialsController.Summary"] = [Permissions.VendorFinancials],
         ["VendorFinancialsController.Vendor"] = [Permissions.VendorFinancials],
 
+        ["SavedReportsController.List"] = [Permissions.PurchasingReports],
+        ["SavedReportsController.Create"] = [Permissions.PurchasingReports],
+        ["SavedReportsController.Get"] = [Permissions.PurchasingReports],
+        ["SavedReportsController.Open"] = [Permissions.PurchasingReports],
+        ["SavedReportsController.Delete"] = [Permissions.PurchasingReports],
+        ["SavedReportsController.Export"] = [Permissions.PurchasingReports, Permissions.Export],
+
         ["AiController.Chat"] = [Permissions.AiQuery],
+        ["AiController.VisualExport"] = [Permissions.AiQuery, Permissions.Export],
         ["AiDemoController.Chat"] = [Permissions.AiQuery],
 
         ["AiAdminController.GetStatus"] = [Permissions.Admin],

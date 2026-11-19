@@ -16,13 +16,15 @@ public class AuditActionsTests
         "user.unlocked", "report.opened", "report.printed", "access.denied", "audit.viewed",
         "data_quality.viewed", "sync.requested", "sync.rejected", "provider.status.viewed",
         "reconciliation.run", "reconciliation.mismatch", "settings.ai_provider.changed",
-        "ai.question",
+        "ai.question", "report.exported", "saved_report.saved", "saved_report.replaced",
+        "saved_report.opened", "saved_report.deleted",
     ];
 
     private static readonly string[] ExpectedReportKeys =
     [
         "overview", "vendors", "vendor-profile", "by-vendor", "by-product", "by-category", "trend",
         "top-products", "returns", "transactions", "vendors-compare", "drill-down", "drill-down-lines",
+        "generated",
     ];
 
     [Fact]
@@ -30,9 +32,14 @@ public class AuditActionsTests
     {
         var codes = AuditActions.All.Select(entry => entry.Code).ToArray();
 
-        Assert.Equal(23, codes.Length);
+        Assert.Equal(28, codes.Length);
         Assert.Equal(ExpectedCodes.OrderBy(code => code), codes.OrderBy(code => code));
         Assert.Equal("پرسش از دستیار هوشمند", AuditActions.Label("ai.question"));
+        Assert.Equal("خروجی اکسل", AuditActions.Label("report.exported"));
+        Assert.Equal("ذخیره گزارش", AuditActions.Label("saved_report.saved"));
+        Assert.Equal("جایگزینی گزارش ذخیره شده", AuditActions.Label("saved_report.replaced"));
+        Assert.Equal("باز کردن گزارش ذخیره شده", AuditActions.Label("saved_report.opened"));
+        Assert.Equal("حذف گزارش ذخیره شده", AuditActions.Label("saved_report.deleted"));
     }
 
     [Fact]
@@ -59,9 +66,10 @@ public class AuditActionsTests
     }
 
     [Fact]
-    public void Report_keys_are_the_thirteen_keys_with_persian_names()
+    public void Report_keys_are_the_fourteen_keys_with_persian_names()
     {
         Assert.Equal(ExpectedReportKeys.OrderBy(key => key), ReportKeys.All.OrderBy(key => key));
+        Assert.Equal("گزارش تولیدشده", ReportKeys.Name(ReportKeys.Generated));
 
         foreach (var key in ReportKeys.All)
         {

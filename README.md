@@ -73,6 +73,15 @@ write to Mabna; development uses the offline simulator in `deploy/mabna-sim/`.
 - **Benchmark:** Model selection procedure and records in [`contracts/benchmark.md`](specs/006-local-ai-purchasing/contracts/benchmark.md) and [`quickstart.md`](specs/006-local-ai-purchasing/quickstart.md).
 - **Spec:** [`specs/006-local-ai-purchasing/`](specs/006-local-ai-purchasing/).
 
+## Release 1, Phase 5: AI Reports, Saved Reports, and Excel Export
+
+- **Dynamic AI Reports (F14):** Ranking and comparison questions return a server-built Persian table and optional bar chart (inline SVG, at most 20 categories); canonical top-10 products over the last six Jalali months matches live reports.
+- **Saved Reports (`#/saved`, F15):** Users save any standard report (Save) or AI-generated report (Keep) as a named query specification (not a row snapshot), with a cap of 50 saved reports per user and overwrite confirmation. Opening re-runs on current synced data with current permissions. Generated saved reports require `ai.query` to save and open.
+- **Excel Export (F16):** Download the on-screen table as `.xlsx` (ClosedXML, RTL sheet, Persian headers, metadata, data-quality notice, demonstration label). Export is permitted for Management, Purchasing, and Finance; Admin does not hold export permission.
+- **Print vs Export caps:** Print views cap at 1,000 rows (browser print); Excel exports cap at 10,000 rows with a truncation warning.
+- **Audit trail:** `report.exported` on exports; `saved_report.{saved,replaced,opened,deleted}` on saved report actions; access denied logged without result rows.
+- **Spec:** [`specs/007-ai-reports-export/`](specs/007-ai-reports-export/).
+
 ## Repository layout
 
 ```

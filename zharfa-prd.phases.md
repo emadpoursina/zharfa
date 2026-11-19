@@ -91,7 +91,7 @@
 - [ ] Export of a filtered report produces an .xlsx with Persian headers, RTL sheet, period, filters, export time, and last-sync time
 - [ ] An export is audit-logged; a user without export permission gets 403
 **Out of scope:** Vendor financial exports beyond the permission rules (Phase 6 adds the data), scheduled or emailed reports.
-**Spec:** none
+**Spec:** specs/007-ai-reports-export
 
 ## Phase 6: Vendor financials
 

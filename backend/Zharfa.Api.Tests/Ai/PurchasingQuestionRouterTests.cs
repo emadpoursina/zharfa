@@ -153,4 +153,29 @@ public class PurchasingQuestionRouterTests
         Assert.Equal("purchasing_overview", route.Tool);
         Assert.Equal("overview-default", route.PeriodRule);
     }
+
+    [Theory]
+    [InlineData("Compare the top 10 purchased products over the last six months")]
+    [InlineData("مقایسه ۱۰ کالای پرخرید در شش ماه گذشته")]
+    [InlineData("۱۰ کالای برتر خریداری شده در شش ماه اخیر را مقایسه کنید")]
+    public void Canonical_six_month_ranking_maps_to_top_products_with_last_six_jalali_months_period(string question)
+    {
+        var route = PurchasingQuestionRouter.Classify(question, hasSuccessfulSync: true);
+
+        Assert.Equal("purchasing", route.Scope);
+        Assert.Equal("purchasing_top_products", route.Tool);
+        Assert.Equal("last-six-jalali-months", route.PeriodRule);
+    }
+
+    [Theory]
+    [InlineData("پرمصرف‌ترین کالاها از نظر خالص خرید کدام‌اند؟")]
+    [InlineData("کدام کالاها بیشترین سهم از خرید را داشته‌اند؟")]
+    public void Ranking_questions_without_period_use_overview_default(string question)
+    {
+        var route = PurchasingQuestionRouter.Classify(question, hasSuccessfulSync: true);
+
+        Assert.Equal("purchasing", route.Scope);
+        Assert.Equal("purchasing_top_products", route.Tool);
+        Assert.Equal("overview-default", route.PeriodRule);
+    }
 }

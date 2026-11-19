@@ -15,8 +15,9 @@ authorization check and every KPI calculation lives here, never in the frontend.
 | `Data/` | PostgreSQL access (Npgsql, EF Core), migration runner, audit log, redaction |
 | `Analytics/` | Demo KPI definitions for sales, inventory and receivables |
 | `Ai/` | Purchasing AI tools (PurchasingAnalystTools), Local Ollama provider (OllamaAiProvider), cloud provider (CloudAiProvider), active resolver (ActiveAiProvider), settings (AiProviderSettings), and in-flight gate (AiQuestionGate) |
+| `SavedReports/` | Saved reports entity, service and naming rules (SavedReportService, SavedReportName) |
 
-Schema lives in `db/migrations` (Phase 1 adds `0005_purchasing_sync.sql` and `0006_purchasing_kpis.sql`; Phase 2 adds `0007_purchasing_reports.sql`; Phase 3 adds `0008_permissions_audit_quality.sql`; Phase 4 adds `0009_local_ai_purchasing.sql`).
+Schema lives in `db/migrations` (Phase 1 adds `0005_purchasing_sync.sql` and `0006_purchasing_kpis.sql`; Phase 2 adds `0007_purchasing_reports.sql`; Phase 3 adds `0008_permissions_audit_quality.sql`; Phase 4 adds `0009_local_ai_purchasing.sql`; Phase 5 adds `0010_ai_reports_export.sql`).
 Demo seeds live in `db/seed` and apply in demo mode only.
 
 ## Configuration (secrets stay out of the repo)
@@ -100,6 +101,12 @@ controls navigation; every endpoint above enforces the role on the server.
 **Data.** The reports read the synced `mabna.*` copy through `mabna.fn_purchase_lines` (migration
 `db/migrations/0007_purchasing_reports.sql`). They never query Mabna per request and never read Mabna's
 host-filtered report views. Nothing here returns payments, vendor balance, credit or debt.
+
+## Saved Reports and Excel Export (Release 1, Phase 5)
+
+- **Saved Reports (`/api/saved-reports`):** Save query specifications for standard purchasing reports or AI-generated reports (`#/saved`). Re-runs on current synced data with current caller permissions. Cap of 50 reports per user with duplicate name confirmation. Generated reports require `ai.query` on save and reopen.
+- **Excel Export (`/export` twins):** Dual-policy check (`export` permission required; Admin cannot export). Generates server-side RTL `.xlsx` workbooks (ClosedXML) with Persian headers, metadata (period, filters, export time, last-sync, demo/real label, DQ notice), and a 10,000-row cap with truncation notice.
+- **Print vs Export caps:** Print views cap at 1,000 rows (browser print, JSON); Excel export caps at 10,000 rows (`.xlsx`).
 
 ## Tests
 

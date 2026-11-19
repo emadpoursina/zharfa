@@ -1,17 +1,19 @@
 import { useEffect, useState } from 'react';
-import { getPurchasing, type VendorComparison as VendorComparisonData } from '../services/api';
-import { defaultPeriod, periodParams, type PeriodValue } from '../hooks/useReportQuery';
+import { getPurchasing, downloadReportExport, type VendorComparison as VendorComparisonData } from '../services/api';
+import { canonicalPeriod, defaultPeriod, periodParams, type PeriodValue } from '../hooks/useReportQuery';
 import { DataQualityNotice } from '../components/DataQualityNotice';
 import { EntityPicker, type EntityChoice } from '../components/EntityPicker';
 import { MultiTrendChart, type TrendSeries } from '../components/MultiTrendChart';
 import { PeriodPicker } from '../components/PeriodPicker';
 import { PrintVendorComparison } from '../components/PrintReport';
+import { SaveReportDialog } from '../components/SaveReportDialog';
 import { ReportStatusLine } from '../components/ReportTable';
 import { faNum, faQty, faRialFromDecimal } from '../utils/format';
 
 interface VendorComparisonProps {
   serverToday: string;
   showLink?: boolean;
+  canExport?: boolean;
 }
 
 const MIN_VENDORS = 2;
@@ -22,7 +24,7 @@ const MAX_VENDORS = 5;
  * toggle), the chosen vendors, five measures per vendor and a monthly trend chart. Server messages are shown as they
  * come; the page never computes a figure of its own.
  */
-export function VendorComparison({ serverToday, showLink }: VendorComparisonProps) {
+export function VendorComparison({ serverToday, showLink, canExport }: VendorComparisonProps) {
   const [period, setPeriod] = useState<PeriodValue>(() => defaultPeriod(serverToday));
   const [chosen, setChosen] = useState<EntityChoice[]>([]);
   const [data, setData] = useState<VendorComparisonData | null>(null);
@@ -30,11 +32,29 @@ export function VendorComparison({ serverToday, showLink }: VendorComparisonProp
   const [loading, setLoading] = useState(false);
   const [print, setPrint] = useState<VendorComparisonData | null>(null);
   const [printError, setPrintError] = useState<string | null>(null);
+  const [saveOpen, setSaveOpen] = useState(false);
+  const [exporting, setExporting] = useState(false);
+  const [exportError, setExportError] = useState<string | null>(null);
 
   const keys = chosen.map((choice) => choice.key);
   const runnable = keys.length >= MIN_VENDORS;
   const periodKey = JSON.stringify(periodParams(period));
   const vendorsKey = keys.join(',');
+
+  const exportNow = async () => {
+    setExporting(true);
+    setExportError(null);
+    try {
+      await downloadReportExport('vendors/compare', {
+        vendors: vendorsKey,
+        ...(JSON.parse(periodKey) as Record<string, string>),
+      });
+    } catch (caught) {
+      setExportError(caught instanceof Error ? caught.message : 'دریافت خروجی اکسل انجام نشد.');
+    } finally {
+      setExporting(false);
+    }
+  };
 
   useEffect(() => {
     if (!runnable) {
@@ -169,7 +189,24 @@ export function VendorComparison({ serverToday, showLink }: VendorComparisonProp
           <ReportStatusLine envelope={data} />
           <DataQualityNotice notice={data.dataQuality} showLink={Boolean(showLink)} />
 
-          <div className="flex justify-end">
+          <div className="flex justify-end gap-2">
+            <button
+              type="button"
+              onClick={() => setSaveOpen(true)}
+              className="rounded-lg border border-gray-300 bg-white px-3 py-1.5 text-sm font-medium text-gray-800 hover:bg-gray-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-600 cursor-pointer"
+            >
+              ذخیره گزارش
+            </button>
+            {canExport && (
+              <button
+                type="button"
+                onClick={exportNow}
+                disabled={exporting}
+                className="rounded-lg border border-emerald-300 bg-emerald-50 px-3 py-1.5 text-sm font-medium text-emerald-800 hover:bg-emerald-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-600 disabled:opacity-50 cursor-pointer"
+              >
+                {exporting ? 'در حال دریافت...' : 'خروجی اکسل'}
+              </button>
+            )}
             <button
               type="button"
               onClick={printNow}
@@ -178,7 +215,19 @@ export function VendorComparison({ serverToday, showLink }: VendorComparisonProp
               چاپ مقایسه
             </button>
           </div>
+          {exportError && <p role="alert" className="text-sm text-red-700">{exportError}</p>}
           {printError && <p role="alert" className="text-sm text-red-700">{printError}</p>}
+
+          {saveOpen && (
+            <SaveReportDialog
+              open={saveOpen}
+              kind="vendors-compare"
+              defaultName="مقایسه تأمین‌کنندگان"
+              period={canonicalPeriod(period)}
+              filters={{ vendors: keys }}
+              onClose={() => setSaveOpen(false)}
+            />
+          )}
 
           <div className="overflow-x-auto rounded-xl border border-gray-200 bg-white shadow-xs">
             <table className="min-w-full text-sm">

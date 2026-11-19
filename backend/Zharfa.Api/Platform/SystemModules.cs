@@ -17,6 +17,7 @@ using Zharfa.Api.Security;
 /// <param name="AuditLog">Audit log page: the <c>admin</c> permission.</param>
 /// <param name="DataQuality">Data quality page: the <c>admin</c> permission.</param>
 /// <param name="AiSettings">AI provider settings page: the <c>admin</c> permission.</param>
+/// <param name="SavedReports">Saved reports page: the <c>purchasing.reports</c> permission.</param>
 public sealed record SystemModules(
     bool Overview,
     bool DataSync,
@@ -26,7 +27,8 @@ public sealed record SystemModules(
     bool Users,
     bool AuditLog,
     bool DataQuality,
-    bool AiSettings)
+    bool AiSettings,
+    bool SavedReports)
 {
     public static SystemModules For(DataModeOptions mode, IReadOnlySet<string> permissions)
     {
@@ -41,6 +43,7 @@ public sealed record SystemModules(
             Users: isAdmin,
             AuditLog: isAdmin,
             DataQuality: isAdmin,
-            AiSettings: isAdmin);
+            AiSettings: isAdmin,
+            SavedReports: permissions.Contains(Permissions.PurchasingReports));
     }
 }

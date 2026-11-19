@@ -242,6 +242,11 @@ public class PurchasingAnalystTools(
         var today = Today();
         switch (periodRule)
         {
+            case "last-six-jalali-months":
+            {
+                var endMonth = new JalaliMonth(today.Year, today.Month);
+                return JalaliPeriod.LastNMonths(6, endMonth);
+            }
             case "previous-jalali-month":
             {
                 JalaliPeriod.TryParse("month", null, null, null, today, out var currentM, out _);
@@ -265,7 +270,14 @@ public class PurchasingAnalystTools(
         }
     }
 
-    public virtual async Task<ToolExecutionResult> DispatchAsync(string toolName, JalaliPeriod period, CancellationToken ct)
+    public virtual Task<ToolExecutionResult> DispatchAsync(string toolName, JalaliPeriod period, CancellationToken ct) =>
+        DispatchAsync(toolName, period, ct, null);
+
+    public virtual async Task<ToolExecutionResult> DispatchAsync(
+        string toolName,
+        JalaliPeriod period,
+        CancellationToken ct,
+        JsonElement? arguments)
     {
         if (!AllowlistedToolNames.Contains(toolName))
         {
@@ -276,8 +288,8 @@ public class PurchasingAnalystTools(
         using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
         linkedCts.CancelAfter(TimeSpan.FromSeconds(PER_CALL_TIMEOUT_SECONDS));
 
-        using var emptyDoc = JsonDocument.Parse("{}");
-        var root = emptyDoc.RootElement;
+        using var emptyDoc = arguments.HasValue ? null : JsonDocument.Parse("{}");
+        var root = arguments ?? emptyDoc!.RootElement;
         var callId = "dispatch_" + toolName;
 
         try
@@ -454,7 +466,8 @@ public class PurchasingAnalystTools(
         };
 
         var contentJson = JsonSerializer.Serialize(payload);
-        return new ToolExecutionResult(callId, "purchasing_overview", "purchasing_overview", facts, contentJson, true, Period: period);
+        var totalRows = (res.TopVendors?.Count ?? 0) + (res.TopProducts?.Count ?? 0);
+        return new ToolExecutionResult(callId, "purchasing_overview", "purchasing_overview", facts, contentJson, true, Period: period, RawResult: res, TotalRows: totalRows);
     }
 
     private async Task<ToolExecutionResult> ExecuteGroupedAsync(
@@ -467,7 +480,8 @@ public class PurchasingAnalystTools(
         string? vendorName = GetStringProp(root, "vendor");
         string? productName = GetStringProp(root, "product");
         string? categoryName = GetStringProp(root, "category");
-        int limit = Math.Clamp(GetIntProp(root, "limit") ?? MAX_ROWS, 1, MAX_ROWS);
+        int defaultLimit = reportName == "top-products" ? 10 : MAX_ROWS;
+        int limit = Math.Clamp(GetIntProp(root, "limit") ?? defaultLimit, 1, MAX_ROWS);
 
         string? vendorKey = null;
         if (!string.IsNullOrWhiteSpace(vendorName))
@@ -523,13 +537,18 @@ public class PurchasingAnalystTools(
 
         var table = await reportService.GroupedAsync(reportName, filter, ct);
 
-        if (table.TotalRows > MAX_ROWS)
+        if (table.Rows.Count > MAX_ROWS)
         {
-            logger.LogWarning("Report {Report} exceeded max row cap ({Total} > {Max})", reportName, table.TotalRows, MAX_ROWS);
+            logger.LogWarning("Report {Report} exceeded max row cap ({Total} > {Max})", reportName, table.Rows.Count, MAX_ROWS);
             return UnavailableResult(callId, reportName, "تعداد رکوردهای نتیجه بیش از حد مجاز (۱۰۰ سطر) است.", period, vendor: vendorName, product: productName, category: categoryName);
         }
 
         var facts = new List<string>();
+        if (table.Rows.Count == 0)
+        {
+            facts.Add($"metric=purchasing_{reportName.Replace('-', '_')}; period={period.Label}; count=0; net=0");
+        }
+
         foreach (var row in table.Rows.Take(10))
         {
             var fact = $"metric=purchasing_{reportName.Replace('-', '_')}; period={period.Label}; name={row.Name}; net={row.Net}";
@@ -559,7 +578,7 @@ public class PurchasingAnalystTools(
             }).ToList()
         };
 
-        return new ToolExecutionResult(callId, $"purchasing_{reportName.Replace('-', '_')}", $"purchasing_{reportName.Replace('-', '_')}", facts, JsonSerializer.Serialize(payload), true, Period: period, Vendor: vendorName, Product: productName, Category: categoryName);
+        return new ToolExecutionResult(callId, $"purchasing_{reportName.Replace('-', '_')}", $"purchasing_{reportName.Replace('-', '_')}", facts, JsonSerializer.Serialize(payload), true, Period: period, Vendor: vendorName, Product: productName, Category: categoryName, RawResult: table, DataQuality: table.DataQuality, TotalRows: table.Rows.Count);
     }
 
     private async Task<ToolExecutionResult> ExecuteTrendAsync(string callId, JalaliPeriod period, JsonElement root, CancellationToken ct)
@@ -586,7 +605,7 @@ public class PurchasingAnalystTools(
             items = table.Rows.Select(r => new { month = r.Month, net = r.Net, available = r.Available }).ToList()
         };
 
-        return new ToolExecutionResult(callId, "purchasing_trend", "purchasing_trend", facts, JsonSerializer.Serialize(payload), true, Period: period);
+        return new ToolExecutionResult(callId, "purchasing_trend", "purchasing_trend", facts, JsonSerializer.Serialize(payload), true, Period: period, RawResult: table, DataQuality: table.DataQuality, TotalRows: table.TotalRows);
     }
 
     private async Task<ToolExecutionResult> ExecuteReturnsAsync(string callId, JalaliPeriod period, JsonElement root, CancellationToken ct)
@@ -612,10 +631,17 @@ public class PurchasingAnalystTools(
             period = period.Label,
             totalRows = table.TotalRows,
             totals = table.Totals,
-            items = table.Rows.Select(r => new { product = r.ProductName, vendor = r.VendorName, returns = r.Returns, count = r.DocumentCount }).ToList()
+            previousTotals = table.PreviousTotals,
+            items = table.Rows.Select(r => new
+            {
+                vendor = r.VendorName,
+                product = r.ProductName,
+                returns = r.Returns,
+                quantity = r.Quantity
+            }).ToList()
         };
 
-        return new ToolExecutionResult(callId, "purchasing_returns", "purchasing_returns", facts, JsonSerializer.Serialize(payload), true, Period: period);
+        return new ToolExecutionResult(callId, "purchasing_returns", "purchasing_returns", facts, JsonSerializer.Serialize(payload), true, Period: period, RawResult: table, DataQuality: table.DataQuality, TotalRows: table.TotalRows);
     }
 
     private async Task<ToolExecutionResult> ExecuteTransactionsSummaryAsync(string callId, JalaliPeriod period, JsonElement root, CancellationToken ct)

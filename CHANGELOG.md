@@ -1,5 +1,13 @@
 # Changelog
 
+## [Unreleased] - Zharfa Release 1, Phase 5: AI Reports, Saved Reports, and Excel Export
+### Added
+- Dynamic AI reports (F14): assistant returns a server-built Persian table and optional bar chart (inline SVG) for ranking and comparison purchasing questions; canonical top-10 products over the last six Jalali months matches live reports.
+- Saved reports (F15): users can save any standard or generated report as a named query specification (not a row snapshot), list own reports, and reopen them on current synced data. Generated reports require `ai.query` on save and reopen. Cap of 50 saved reports per user with duplicate name overwrite confirmation.
+- Excel export (F16): ClosedXML server-built `.xlsx` export for report tables and generated tables, with RTL sheet direction, Persian headers, metadata (period, filters, Jalali export time, last-sync, demo/real label, data quality notice), and 10,000-row cap with truncation warning. Admin does not hold export permission.
+- Audit events (F10): `report.exported` on successful Excel exports; `saved_report.saved`, `saved_report.replaced`, `saved_report.opened`, and `saved_report.deleted` on saved report actions; access denied logged without result rows.
+- Migration `db/migrations/0010_ai_reports_export.sql`: `saved_report` table with user ownership, unique name keys, kind checks, and JSON specifications.
+
 ## [Unreleased] - Zharfa Release 1, Phase 2: Vendor and Purchasing Reports
 ### Added
 - Vendor directory and vendor profile for Managers and Admins: net purchases, last purchase date, search by vendor name or code, a 12-month trend, top products, returns and the documents of one vendor.

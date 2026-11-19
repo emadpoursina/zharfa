@@ -22,6 +22,7 @@ public static class ReportKeys
     public const string VendorsCompare = "vendors-compare";
     public const string DrillDown = "drill-down";
     public const string DrillDownLines = "drill-down-lines";
+    public const string Generated = "generated";
 
     private static readonly (string Key, string Name)[] Entries =
     [
@@ -38,6 +39,7 @@ public static class ReportKeys
         (VendorsCompare, "مقایسهٔ تأمین‌کنندگان"),
         (DrillDown, "جزئیات اسناد"),
         (DrillDownLines, "اقلام سند"),
+        (Generated, "گزارش تولیدشده"),
     ];
 
     /// <summary>The thirteen report keys in the data-model order.</summary>

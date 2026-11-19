@@ -165,13 +165,14 @@ public static class DataQualityCatalog
     public static bool IsIssueType(string id) => Find(id) is not null;
 
     /// <summary>
-    /// The key the notice and the catalog use for a report: <c>vendor-profile</c> is covered by <c>vendors</c> and
-    /// <c>drill-down-lines</c> by <c>drill-down</c>; every other key is its own.
+    /// The key the notice and the catalog use for a report: <c>vendor-profile</c> is covered by <c>vendors</c>,
+    /// <c>drill-down-lines</c> by <c>drill-down</c>, and <c>generated</c> by <c>top-products</c>; every other key is its own.
     /// </summary>
     public static string NoticeKey(string reportKey) => reportKey switch
     {
         ReportKeys.VendorProfile => ReportKeys.Vendors,
         ReportKeys.DrillDownLines => ReportKeys.DrillDown,
+        ReportKeys.Generated => ReportKeys.TopProducts,
         _ => reportKey,
     };
 

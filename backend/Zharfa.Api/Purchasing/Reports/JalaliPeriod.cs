@@ -66,6 +66,12 @@ public sealed class JalaliPeriod
         _ => "custom",
     };
 
+    /// <summary>Wire string format of <see cref="From"/> (YYYY-MM-DD).</summary>
+    public string FromWire => $"{From.Year:D4}-{From.Month:D2}-{From.Day:D2}";
+
+    /// <summary>Wire string format of <see cref="To"/> (YYYY-MM-DD).</summary>
+    public string ToWire => $"{To.Year:D4}-{To.Month:D2}-{To.Day:D2}";
+
     /// <summary>yyyymmdd key of <see cref="From"/>, for SQL day-key ranges.</summary>
     public int FromKey => DayKey(From);
 
@@ -171,6 +177,23 @@ public sealed class JalaliPeriod
         }
 
         return list;
+    }
+
+    /// <summary>
+    /// Creates a custom period spanning the <paramref name="n"/> Jalali months ending with <paramref name="end"/>
+    /// (inclusive of <paramref name="end"/> as month n, research R3).
+    /// </summary>
+    public static JalaliPeriod LastNMonths(int n, JalaliMonth end)
+    {
+        if (n < 1)
+        {
+            throw new ArgumentOutOfRangeException(nameof(n), "تعداد ماه‌ها باید حداقل ۱ باشد.");
+        }
+
+        var startMonth = end.AddMonths(-(n - 1));
+        var from = MonthStart(startMonth);
+        var to = MonthEnd(end);
+        return Unclipped(JalaliPeriodKind.Custom, from, to);
     }
 
     /// <summary>
