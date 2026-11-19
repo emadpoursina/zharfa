@@ -38,11 +38,92 @@ public static class ReconcileCommandLine
         "استفاده: reconcile purchasing --month YYYY-MM [--vendor <key> | --product <key>] [--basis line|lineAndDocument] [--show-amounts]. " +
         "Usage: reconcile purchasing --month YYYY-MM [--vendor <key> | --product <key>] [--basis line|lineAndDocument] [--show-amounts].";
 
+    public const string VendorBalanceUsage =
+        "استفاده: reconcile vendor-balance --month YYYY-MM [--vendor <key>] [--show-amounts]. " +
+        "Usage: reconcile vendor-balance --month YYYY-MM [--vendor <key>] [--show-amounts].";
+
     private static readonly Regex MonthPattern = new(@"^(\d{4})-(\d{1,2})$", RegexOptions.CultureInvariant);
 
     /// <summary>True when the process was started for the reconciliation command.</summary>
     public static bool IsReconcile(IReadOnlyList<string> args) =>
         args.Count > 0 && string.Equals(args[0], "reconcile", StringComparison.Ordinal);
+
+    /// <summary>True for <c>reconcile vendor-balance</c> (the purchasing parse refuses it and vice versa).</summary>
+    public static bool IsVendorBalance(IReadOnlyList<string> args) =>
+        args.Count > 1 && string.Equals(args[1], "vendor-balance", StringComparison.Ordinal);
+
+    /// <summary>
+    /// Parses <c>reconcile vendor-balance --month YYYY-MM [--vendor key] [--show-amounts]</c>
+    /// (specs/008-vendor-financials/contracts/cli-and-config.md). Pure. `--product` and `--basis` do not
+    /// belong to this command and are refused as unknown options; the basis of the result stays '-'.
+    /// </summary>
+    public static ReconcileParseResult ParseVendorBalance(IReadOnlyList<string> args)
+    {
+        ArgumentNullException.ThrowIfNull(args);
+
+        if (args.Count < 2 || !string.Equals(args[0], "reconcile", StringComparison.Ordinal) ||
+            !string.Equals(args[1], "vendor-balance", StringComparison.Ordinal))
+        {
+            return Error(VendorBalanceUsage);
+        }
+
+        string? month = null;
+        string? vendor = null;
+        var showAmounts = false;
+        var seen = new HashSet<string>(StringComparer.Ordinal);
+
+        for (var i = 2; i < args.Count; i++)
+        {
+            var option = args[i];
+            if (!seen.Add(option) && option != "--show-amounts")
+            {
+                return Error($"گزینه {option} بیش از یک بار آمده است. Option {option} is repeated.");
+            }
+
+            switch (option)
+            {
+                case "--show-amounts":
+                    showAmounts = true;
+                    break;
+                case "--month":
+                    if (!TryValue(args, ref i, out month))
+                    {
+                        return Error($"مقدار {option} لازم است. A value for {option} is required.");
+                    }
+
+                    break;
+                case "--vendor":
+                    if (!TryValue(args, ref i, out vendor))
+                    {
+                        return Error($"مقدار {option} لازم است. A value for {option} is required.");
+                    }
+
+                    break;
+                default:
+                    return Error($"گزینه ناشناخته {option}. Unknown option {option}. " + VendorBalanceUsage);
+            }
+        }
+
+        if (month is null)
+        {
+            return Error("--month لازم است. --month YYYY-MM is required.");
+        }
+
+        var parsedMonth = ParseMonth(month);
+        if (parsedMonth is null)
+        {
+            return Error("ماه باید به شکل YYYY-MM و بین ۱ تا ۱۲ باشد. --month must be YYYY-MM with a month from 1 to 12.");
+        }
+
+        var command = new ReconcileCommand(
+            parsedMonth.Value.Year,
+            parsedMonth.Value.Month,
+            vendor is not null ? "vendor" : "none",
+            vendor,
+            Basis: null,
+            ShowAmounts: showAmounts);
+        return new ReconcileParseResult(command, null);
+    }
 
     public static ReconcileParseResult Parse(IReadOnlyList<string> args)
     {

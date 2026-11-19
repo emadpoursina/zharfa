@@ -125,3 +125,38 @@ Release 1 Phase 3 (spec 005, `specs/005-permissions-audit-quality/`). Run with 7
 - [ ] **Dev** Line net-amount and document-total columns: verify whether a line net-amount column and a document-total column exist in Mabna's purchase tables. Confirming and mapping these columns will enable the deferred `line-net-mismatch` and `document-total-mismatch` sub-checks in data quality (currently listed under «بررسی نشده»).
 - [ ] **Dev** Product code column(s): verify the product code column(s) in the product master and whether one code can map to several products. This will enable replacing the Release 1 name-based heuristic for `inconsistent-product-ids` (rule PI1) with a code-level verification rule.
 - [ ] **Dev** Purchase document number uniqueness: confirm whether purchase document numbers in Mabna are unique per document type alone or per vendor and document type. Release 1 duplicate rule DU1 partitions by `(doc_type, vendor_source_key, doc_number)`. Pass: confirmed with the owner / verified by catalog metadata and aggregates.
+
+### 7.8 Phase 6 items (Vendor financials payables)
+
+Release 1 Phase 6 (spec 008, `specs/008-vendor-financials/`). Run with 7.1–7.7 on the same visit. Same rules:
+catalog metadata only, owner-approved aggregates only (counts and totals the owner signs off — never a row, a
+cheque number or a document line in the repository); logical names only in
+`specs/008-vendor-financials/source-verification.md`. Mabna stays read-only; no `HOST_ID()`-filtered view is
+read or allowlisted for these items either.
+
+- [ ] **Dev** Vendor balance source tables: identify the accounting object(s) that hold open vendor payables and
+  credit notes. Verify object, key, vendor link, document date and the **signed** remaining-amount column
+  (negative = credit in the vendor's favour). Pass: each item recorded as `candidate` in the gitignored map,
+  confirmed with the owner by catalog metadata plus an owner-approved open-items count.
+- [ ] **Dev** Payable cheque source table: object, key, vendor link, issue date, face amount, unpaid
+  **remaining** amount, cheque number reference, clear/settlement date. Pass: recorded as `candidate`; an
+  owner-approved count of open vs cleared cheques matches the source.
+- [ ] **Dev** Cheque instrument type and state: the columns the balance/outstanding formulas use (type, and
+  open/paid/cancelled state) and the distinct values each holds. Pass: values listed for the owner to confirm;
+  `payableCheque.instrumentType` and `payableCheque.state` carry a column or an explicit `unknown` in the map.
+- [ ] **Dev** Payment source table: object, key, vendor link, payment/clear date, amount (**paid portion**
+  only — never the unpaid remainder), instrument type and the optional instrument link. Pass: recorded as
+  `candidate`; owner-approved monthly payment-count aggregate matches.
+- [ ] **Dev** Accounting-confirmed balance formula: walk the owner's own "what we owe a vendor" calculation and
+  record it as `balanceFormula` in the map (`confirmed` or `corrected`). Pass: one formula documented; until
+  then production reporting keeps the candidate mix unusable («داده در دسترس نیست»).
+- [ ] **Dev** Allocations: whether one instrument can settle several vendors and which object records the
+  split. Pass: recorded; while unverified, `paymentAllocation` stays unmapped and allocation-dependent figures
+  stay unavailable.
+- [ ] **Dev** Partial-payment rule: confirm how a partially paid instrument stores its paid portion and its
+  remainder (payment row vs instrument remainder), so the two never double-count. Pass: rule confirmed with the
+  owner; if it needs a split the map's `partialPayment.status` is set accordingly, otherwise split-dependent
+  figures stay unavailable.
+- [ ] **Dev** Copy the logical statuses and the verification date into
+  `specs/008-vendor-financials/source-verification.md`, and the on-site `reconcile vendor-balance` pass or fail
+  (no amounts). Pass: the file holds logical item names only.

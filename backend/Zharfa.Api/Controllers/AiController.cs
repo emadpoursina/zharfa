@@ -65,8 +65,20 @@ public class AiController(
     ILogger<AiController> logger,
     ExcelExportService? exportService = null,
     IOptions<SyncOptions>? syncOptions = null,
-    TimeProvider? clock = null) : ControllerBase
+    TimeProvider? clock = null,
+    VendorFinancialAnalystTools? financialTools = null) : ControllerBase
 {
+    private const string FinancialSystemPrompt =
+        "شما تحلیل‌گر هوشمند مالی تأمین‌کنندگان در شرکت پخش دارویی «ژرفا» هستید.\n" +
+        "قوانین الزامی و قطعی شما:\n" +
+        "۱. پاسخ را منحصراً به زبان فارسی روان، محترمانه و دقیق ارائه دهید.\n" +
+        "۲. ارقام و حقایق را صرفاً از نتایج ابزارهای مجاز مالی استخراج کنید؛ هرگز رقمی از خود نسازید، تخمین نزنید یا حدس نزنید.\n" +
+        "۳. همواره دوره زمانی، فیلترها و نام نمای مرجع را در پاسخ خود ذکر نمایید.\n" +
+        "۴. حقایق قطعی استخراج‌شده از ابزارها را از تحلیل و تفسیر تفکیک کنید. در متن تفسیر هیچ عددی که در حقایق نیامده اضافه نکنید.\n" +
+        "۵. در صورتی که داده‌ای یافت نشد یا منبع در دسترس نبود، صریحاً پاسخ دهید: «داده در دسترس نیست».\n" +
+        "۶. چهار مفهوم مالی را کاملاً تفکیک کنید: خرید خالص، پرداخت‌ها، پرداخت‌های معوق و مانده تأمین‌کننده. هرگز تفاوت خرید و پرداخت را سود یا حاشیه سود نام‌گذاری نکنید؛ تنها عنوان مجاز «خرید منهای پرداخت» است.\n" +
+        "۷. مانده تأمین‌کننده دارای علامت است (مثبت بدهی، منفی بستانکاری) و هرگز سود نامیده نمی‌شود.";
+
     private const string PurchasingSystemPrompt =
         "شما تحلیل‌گر هوشمند خرید در شرکت پخش دارویی «ژرفا» هستید.\n" +
         "قوانین الزامی و قطعی شما:\n" +
@@ -167,11 +179,14 @@ public class AiController(
                 return AssistantUnavailableResult("خطا در برقراری ارتباط با سرویس هوش مصنوعی.");
             }
 
-            // 2. Scope router gate (T087, research R21)
+            // 2. Scope router gate (T087, research R21, Phase 6 US7)
             var hasSuccessfulSync = await analystTools.HasSuccessfulSyncAsync(budgetCts.Token);
-            var route = PurchasingQuestionRouter.Classify(rawQuestion, hasSuccessfulSync);
+            var hasFinancials = User.HasPermission(Permissions.VendorFinancials);
+            var route = PurchasingQuestionRouter.Classify(rawQuestion, hasSuccessfulSync, hasFinancials);
 
-            if (route.Scope != "purchasing")
+            var isFinancial = route.Scope == "vendor-financials" && route.Tool != null && financialTools != null;
+
+            if (route.Scope != "purchasing" && !isFinancial)
             {
                 // Metric-unavailable: 200 OK, empty facts, view=null, «داده در دسترس نیست»
                 // Tools are NEVER executed and CompleteAsync is NEVER called (Q13 safe).
@@ -187,9 +202,9 @@ public class AiController(
                 return Ok(PurchasingCitedAnswer.CreateUnavailable(periodInfo, filtersInfo, dataMode.DataLabel, dataMode.IsDemo ? DemoNoticeText : null));
             }
 
-            // 3. Server-dispatch mapped tool (T089, research R22)
-            var boundPeriod = analystTools.BindPeriod(route.PeriodRule);
-            var toolName = route.Tool ?? "purchasing_overview";
+            // 3. Server-dispatch mapped tool (T089, research R22, T070, T071)
+            var boundPeriod = isFinancial ? financialTools!.BindPeriod(route.PeriodRule) : analystTools.BindPeriod(route.PeriodRule);
+            var toolName = route.Tool ?? (isFinancial ? "vendor_financials_list" : "purchasing_overview");
 
             var periodDto = new PurchasingPeriodDto(
                 From: boundPeriod.From.ToDateOnly().ToString("yyyy-MM-dd"),
@@ -197,10 +212,26 @@ public class AiController(
                 JalaliLabel: boundPeriod.Label,
                 Month: boundPeriod.Kind == JalaliPeriodKind.Month ? boundPeriod.StartMonth.Key : null);
 
+            JsonElement? financialArgs = null;
+            if (isFinancial)
+            {
+                var matchedVendor = await financialTools!.FindVendorInTextAsync(rawQuestion, budgetCts.Token);
+                if (matchedVendor != null)
+                {
+                    financialArgs = JsonSerializer.SerializeToElement(new
+                    {
+                        vendor = matchedVendor.Name,
+                        vendorKey = matchedVendor.Key
+                    });
+                }
+            }
+
             ToolExecutionResult toolResult;
             try
             {
-                toolResult = await analystTools.DispatchAsync(toolName, boundPeriod, budgetCts.Token);
+                toolResult = isFinancial
+                    ? await financialTools!.DispatchAsync(toolName, boundPeriod, budgetCts.Token, financialArgs)
+                    : await analystTools.DispatchAsync(toolName, boundPeriod, budgetCts.Token);
             }
             catch (AiException ex)
             {
@@ -230,9 +261,11 @@ public class AiController(
             string modelContent;
             try
             {
+                var systemPrompt = isFinancial ? FinancialSystemPrompt : PurchasingSystemPrompt;
+                var sourceName = isFinancial ? "سامانه مالی تأمین‌کنندگان" : "سامانه خرید";
                 var promptWithFacts =
-                    PurchasingSystemPrompt +
-                    "\n\nحقایق استخراج‌شده از سامانه خرید که باید منحصراً مبنای پاسخ قرار گیرند:\n" +
+                    systemPrompt +
+                    $"\n\nحقایق استخراج‌شده از {sourceName} که باید منحصراً مبنای پاسخ قرار گیرند:\n" +
                     string.Join("\n", toolResult.Facts);
 
                 var phrasingMessages = new List<AiMessage>

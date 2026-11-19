@@ -55,6 +55,21 @@ public static class DataQualityCatalog
         ReportKeys.DrillDown,
     ];
 
+    /// <summary>
+    /// Phase 6 (T021, research R13): the financial report keys, added to every issue type whose rules can flag a
+    /// payable, cheque or payment row. The detail key is covered through <see cref="NoticeKey"/>.
+    /// </summary>
+    private static readonly IReadOnlyList<string> FinancialKeys =
+    [
+        ReportKeys.VendorFinancials,
+        ReportKeys.VendorFinancialsHistory,
+        ReportKeys.VendorFinancialsOutstanding,
+    ];
+
+    /// <summary>The eleven purchasing keys plus the financial keys (the five types with financial rules).</summary>
+    private static readonly IReadOnlyList<string> ElevenPlusFinancial =
+        AllEleven.Concat(FinancialKeys).ToArray();
+
     /// <summary>The seven types in the data-model order (§3.3).</summary>
     public static IReadOnlyList<IssueTypeInfo> IssueTypes { get; } =
     [
@@ -62,14 +77,14 @@ public static class DataQualityCatalog
             MissingValues,
             "مقادیر ناقص",
             "سند یا ردیف خرید بدون مقدار لازم (شماره سند، تأمین‌کننده، کالا یا مقدار).",
-            AllEleven,
+            ElevenPlusFinancial,
             [],
             null),
         new IssueTypeInfo(
             DuplicateRecords,
             "رکوردهای تکراری",
             "سندهای خرید هم‌نوع با شماره سند یکسان برای یک تأمین‌کننده (به‌جز اولین سند).",
-            AllEleven,
+            ElevenPlusFinancial,
             [],
             null),
         new IssueTypeInfo(
@@ -87,6 +102,7 @@ public static class DataQualityCatalog
                 ReportKeys.Transactions,
                 ReportKeys.VendorsCompare,
                 ReportKeys.DrillDown,
+                .. FinancialKeys,
             ],
             [],
             null),
@@ -109,7 +125,7 @@ public static class DataQualityCatalog
             InvalidDates,
             "تاریخ‌های نامعتبر",
             "سندهایی با تاریخ بعد از امروز یا پیش از تاریخ شروع مجاز.",
-            AllEleven,
+            ElevenPlusFinancial,
             [],
             null),
         new IssueTypeInfo(
@@ -132,7 +148,7 @@ public static class DataQualityCatalog
             InconsistentAmounts,
             "مبالغ ناسازگار",
             "ردیف‌ها یا سندهایی با تخفیف یا مالیات ناسازگار با مبلغ.",
-            AllEleven,
+            ElevenPlusFinancial,
             [
                 (LineNetMismatch, NetReason),
                 (DocumentTotalMismatch, TotalReason),
@@ -152,6 +168,7 @@ public static class DataQualityCatalog
         ["document-discount"] = "تخفیف سند",
         ["category"] = "گروه کالا",
         ["name"] = "نام کالا",
+        ["amount"] = "مبلغ",
     };
 
     /// <summary>Persian label of a field code (data-model §3.3). An unknown code is returned as it is.</summary>
@@ -173,6 +190,7 @@ public static class DataQualityCatalog
         ReportKeys.VendorProfile => ReportKeys.Vendors,
         ReportKeys.DrillDownLines => ReportKeys.DrillDown,
         ReportKeys.Generated => ReportKeys.TopProducts,
+        ReportKeys.VendorFinancialsDetail => ReportKeys.VendorFinancials,
         _ => reportKey,
     };
 

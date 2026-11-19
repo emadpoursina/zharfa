@@ -11,30 +11,63 @@
       "kind": "table",
       "hostFiltered": false,
       "status": "candidate",
-      "key": { "column": "VendorID", "status": "candidate" },
-      "name": { "column": "VendorName", "status": "candidate" },
-      "active": { "column": null, "status": "unknown" },
-      "code": { "column": "SimVendorCode", "status": "candidate" },
-      "change": { "strategy": "full" }
+      "key": {
+        "column": "VendorID",
+        "status": "candidate"
+      },
+      "name": {
+        "column": "VendorName",
+        "status": "candidate"
+      },
+      "active": {
+        "column": null,
+        "status": "unknown"
+      },
+      "code": {
+        "column": "SimVendorCode",
+        "status": "candidate"
+      },
+      "change": {
+        "strategy": "full"
+      }
     },
     "product": {
       "object": "dbo.SimProduct",
       "kind": "table",
       "hostFiltered": false,
       "status": "candidate",
-      "key": { "column": "ProductID", "status": "candidate" },
-      "name": { "column": "ProductName", "status": "candidate" },
-      "categoryKey": { "column": "SimDrugGroupID", "status": "candidate" },
-      "change": { "strategy": "full" }
+      "key": {
+        "column": "ProductID",
+        "status": "candidate"
+      },
+      "name": {
+        "column": "ProductName",
+        "status": "candidate"
+      },
+      "categoryKey": {
+        "column": "SimDrugGroupID",
+        "status": "candidate"
+      },
+      "change": {
+        "strategy": "full"
+      }
     },
     "productCategory": {
       "object": "dbo.SimDrugGroup",
       "kind": "table",
       "hostFiltered": false,
       "status": "candidate",
-      "key": { "column": "DrugGroupID", "status": "candidate" },
-      "name": { "column": "DrugGroupName", "status": "candidate" },
-      "change": { "strategy": "full" }
+      "key": {
+        "column": "DrugGroupID",
+        "status": "candidate"
+      },
+      "name": {
+        "column": "DrugGroupName",
+        "status": "candidate"
+      },
+      "change": {
+        "strategy": "full"
+      }
     },
     "purchaseInvoice": {
       "object": "dbo.SimInvDoc",
@@ -42,15 +75,44 @@
       "hostFiltered": false,
       "status": "candidate",
       "filter": [
-        { "column": "SimOpCode", "op": "Eq", "value": 11, "status": "candidate" }
+        {
+          "column": "SimOpCode",
+          "op": "Eq",
+          "value": 11,
+          "status": "candidate"
+        }
       ],
-      "key": { "column": "DocID", "status": "candidate" },
-      "number": { "column": "SimDocNumber", "status": "candidate" },
-      "vendorKey": { "column": "VendorID", "status": "candidate" },
-      "date": { "column": "SimDocDate", "format": "jalaliText", "status": "candidate" },
-      "docDiscount": { "column": null, "status": "unknown" },
-      "cancelled": { "rule": "column", "column": "IsCanceled", "value": 1, "status": "candidate" },
-      "change": { "strategy": "idWatermark", "column": "DocID" }
+      "key": {
+        "column": "DocID",
+        "status": "candidate"
+      },
+      "number": {
+        "column": "SimDocNumber",
+        "status": "candidate"
+      },
+      "vendorKey": {
+        "column": "VendorID",
+        "status": "candidate"
+      },
+      "date": {
+        "column": "SimDocDate",
+        "format": "jalaliText",
+        "status": "candidate"
+      },
+      "docDiscount": {
+        "column": null,
+        "status": "unknown"
+      },
+      "cancelled": {
+        "rule": "column",
+        "column": "IsCanceled",
+        "value": 1,
+        "status": "candidate"
+      },
+      "change": {
+        "strategy": "idWatermark",
+        "column": "DocID"
+      }
     },
     "purchaseReturn": {
       "object": "dbo.SimRetDoc",
@@ -58,29 +120,252 @@
       "hostFiltered": false,
       "status": "candidate",
       "filter": [
-        { "column": "SimOpCode", "op": "Eq", "value": 12, "status": "candidate" }
+        {
+          "column": "SimOpCode",
+          "op": "Eq",
+          "value": 12,
+          "status": "candidate"
+        }
       ],
-      "key": { "column": "DocID", "status": "candidate" },
-      "number": { "column": "SimDocNumber", "status": "candidate" },
-      "vendorKey": { "column": "VendorID", "status": "candidate" },
-      "date": { "column": "SimDocDate", "format": "jalaliText", "status": "candidate" },
-      "docDiscount": { "column": null, "status": "unknown" },
-      "cancelled": { "rule": "column", "column": "IsCanceled", "value": 1, "status": "candidate" },
-      "change": { "strategy": "idWatermark", "column": "DocID" }
+      "key": {
+        "column": "DocID",
+        "status": "candidate"
+      },
+      "number": {
+        "column": "SimDocNumber",
+        "status": "candidate"
+      },
+      "vendorKey": {
+        "column": "VendorID",
+        "status": "candidate"
+      },
+      "date": {
+        "column": "SimDocDate",
+        "format": "jalaliText",
+        "status": "candidate"
+      },
+      "docDiscount": {
+        "column": null,
+        "status": "unknown"
+      },
+      "cancelled": {
+        "rule": "column",
+        "column": "IsCanceled",
+        "value": 1,
+        "status": "candidate"
+      },
+      "change": {
+        "strategy": "idWatermark",
+        "column": "DocID"
+      }
     },
     "purchaseLine": {
       "object": "dbo.SimInvDocItem",
       "kind": "table",
       "hostFiltered": false,
       "status": "candidate",
-      "key": { "column": "ItemID", "status": "candidate" },
-      "documentKey": { "column": "DocID", "status": "candidate" },
-      "productKey": { "column": "PrdID", "status": "candidate" },
-      "quantity": { "column": "SimQuantity", "status": "candidate" },
-      "grossAmount": { "column": "SimLineAmount", "amountSign": "abs", "status": "candidate" },
-      "lineDiscount": { "column": "Disc", "status": "candidate" },
-      "vat": { "column": "Vat", "status": "candidate" },
-      "change": { "strategy": "full" }
+      "key": {
+        "column": "ItemID",
+        "status": "candidate"
+      },
+      "documentKey": {
+        "column": "DocID",
+        "status": "candidate"
+      },
+      "productKey": {
+        "column": "PrdID",
+        "status": "candidate"
+      },
+      "quantity": {
+        "column": "SimQuantity",
+        "status": "candidate"
+      },
+      "grossAmount": {
+        "column": "SimLineAmount",
+        "amountSign": "abs",
+        "status": "candidate"
+      },
+      "lineDiscount": {
+        "column": "Disc",
+        "status": "candidate"
+      },
+      "vat": {
+        "column": "Vat",
+        "status": "candidate"
+      },
+      "change": {
+        "strategy": "full"
+      }
+    },
+    "payableDocument": {
+      "object": "dbo.SimPayAccDoc",
+      "kind": "table",
+      "hostFiltered": false,
+      "status": "candidate",
+      "key": {
+        "column": "PayDocID",
+        "status": "candidate"
+      },
+      "vendorKey": {
+        "column": "VendorID",
+        "status": "candidate"
+      },
+      "number": {
+        "column": "SimDocNumber",
+        "status": "candidate"
+      },
+      "date": {
+        "column": "SimDocDate",
+        "format": "jalaliText",
+        "status": "candidate"
+      },
+      "remainingAmount": {
+        "column": "RemainAmt",
+        "amountSign": "asIs",
+        "status": "candidate"
+      },
+      "cancelled": {
+        "rule": "column",
+        "column": "IsCanceled",
+        "value": 1,
+        "status": "candidate"
+      },
+      "change": {
+        "strategy": "full"
+      }
+    },
+    "payableCheque": {
+      "object": "dbo.SimPayChq",
+      "kind": "table",
+      "hostFiltered": false,
+      "status": "candidate",
+      "key": {
+        "column": "ChqID",
+        "status": "candidate"
+      },
+      "vendorKey": {
+        "column": "VendorID",
+        "status": "candidate"
+      },
+      "number": {
+        "column": "SimChqNumber",
+        "status": "candidate"
+      },
+      "date": {
+        "column": "SimIssueDate",
+        "format": "jalaliText",
+        "status": "candidate"
+      },
+      "amount": {
+        "column": "ChqAmt",
+        "amountSign": "asIs",
+        "status": "candidate"
+      },
+      "remainingAmount": {
+        "column": "RemainAmt",
+        "amountSign": "asIs",
+        "status": "candidate"
+      },
+      "instrumentType": {
+        "column": "ChqTp",
+        "status": "candidate"
+      },
+      "state": {
+        "column": "ChqState",
+        "status": "candidate"
+      },
+      "clearedAt": {
+        "column": "SimClearDate",
+        "format": "jalaliText",
+        "status": "candidate"
+      },
+      "cancelled": {
+        "rule": "column",
+        "column": "IsCanceled",
+        "value": 1,
+        "status": "candidate"
+      },
+      "change": {
+        "strategy": "full"
+      }
+    },
+    "vendorPayment": {
+      "object": "dbo.SimVendorPay",
+      "kind": "table",
+      "hostFiltered": false,
+      "status": "candidate",
+      "key": {
+        "column": "PayID",
+        "status": "candidate"
+      },
+      "vendorKey": {
+        "column": "VendorID",
+        "status": "candidate"
+      },
+      "number": {
+        "column": "SimPayNumber",
+        "status": "candidate"
+      },
+      "date": {
+        "column": "SimPayDate",
+        "format": "jalaliText",
+        "status": "candidate"
+      },
+      "amount": {
+        "column": "PayAmt",
+        "amountSign": "asIs",
+        "status": "candidate"
+      },
+      "instrumentType": {
+        "column": "PayTp",
+        "status": "candidate"
+      },
+      "instrumentKey": {
+        "column": "SimChqID",
+        "status": "candidate"
+      },
+      "cancelled": {
+        "rule": "column",
+        "column": "IsCanceled",
+        "value": 1,
+        "status": "candidate"
+      },
+      "change": {
+        "strategy": "full"
+      }
+    },
+    "paymentAllocation": {
+      "object": "dbo.SimPayAlloc",
+      "kind": "table",
+      "hostFiltered": false,
+      "status": "candidate",
+      "key": {
+        "column": "AllocID",
+        "status": "candidate"
+      },
+      "instrumentKey": {
+        "column": "SimChqID",
+        "status": "candidate"
+      },
+      "vendorKey": {
+        "column": "VendorID",
+        "status": "candidate"
+      },
+      "amount": {
+        "column": "AllocAmt",
+        "amountSign": "asIs",
+        "status": "candidate"
+      },
+      "change": {
+        "strategy": "full"
+      }
     }
+  },
+  "balanceFormula": {
+    "status": "candidate",
+    "mix": "openPayablesPlusUnpaidCheques"
+  },
+  "partialPayment": {
+    "status": "unknown"
   }
 }

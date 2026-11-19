@@ -1,58 +1,94 @@
 namespace Zharfa.Api.Tests.Security;
 
-using System.Linq;
-using System.Text.Json;
-using Microsoft.AspNetCore.Mvc;
-using Zharfa.Api.Controllers;
-using Zharfa.Api.Platform;
+using Zharfa.Api.Mabna.Sync;
+using Zharfa.Api.VendorFinancials;
 
 /// <summary>
-/// T056 (research R15, contracts/api.md §5): the reserved vendor-financials endpoints answer the "data unavailable"
-/// body in both data modes, with no figure anywhere in the JSON. Pure: the controller is built directly.
+/// T023 (Phase 6 US1, SC-001, research R1/R14): the reserved endpoint is no longer frozen to "not available
+/// until phase 6". What matters is the availability decision: in production a map whose balanceFormula is still
+/// a candidate never produces a number (formula-unconfirmed → «داده در دسترس نیست»), while the demo accepts the
+/// candidate mix. 403 coverage lives in PermissionMatrixTests, not here.
+/// Pure: no database, no network.
 /// </summary>
 public class VendorFinancialsTests
 {
-    private static readonly DataModeOptions Demo = new("demo");
-    private static readonly DataModeOptions Production = new("production");
+    private const string CandidateBalanceJson = """
+    {
+      "version": 1,
+      "balanceFormula": { "status": "candidate", "mix": "openPayablesPlusUnpaidCheques" },
+      "entities": {
+        "purchaseInvoice": { "object": "SimInvDoc", "kind": "table", "hostFiltered": false, "status": "candidate",
+                    "key": { "column": "DocID", "status": "candidate" },
+                    "date": { "column": "SimDocDate", "format": "jalaliText", "status": "candidate" },
+                    "change": { "strategy": "full" } },
+        "purchaseLine": { "object": "SimInvDocItem", "kind": "table", "hostFiltered": false, "status": "candidate",
+                    "key": { "column": "ItemID", "status": "candidate" },
+                    "documentKey": { "column": "DocID", "status": "candidate" },
+                    "grossAmount": { "column": "SimLineAmount", "amountSign": "abs", "status": "candidate" },
+                    "change": { "strategy": "full" } },
+        "payableDocument": { "object": "SimPayAccDoc", "kind": "table", "hostFiltered": false, "status": "candidate",
+                    "key": { "column": "PayDocID", "status": "candidate" },
+                    "vendorKey": { "column": "VendorID", "status": "candidate" },
+                    "date": { "column": "SimDocDate", "format": "jalaliText", "status": "candidate" },
+                    "remainingAmount": { "column": "RemainAmt", "amountSign": "asIs", "status": "candidate" },
+                    "change": { "strategy": "full" } },
+        "payableCheque": { "object": "SimPayChq", "kind": "table", "hostFiltered": false, "status": "candidate",
+                    "key": { "column": "ChqID", "status": "candidate" },
+                    "vendorKey": { "column": "VendorID", "status": "candidate" },
+                    "date": { "column": "SimIssueDate", "format": "jalaliText", "status": "candidate" },
+                    "amount": { "column": "ChqAmt", "amountSign": "asIs", "status": "candidate" },
+                    "remainingAmount": { "column": "RemainAmt", "amountSign": "asIs", "status": "candidate" },
+                    "instrumentType": { "column": "ChqTp", "status": "candidate" },
+                    "state": { "column": "ChqState", "status": "candidate" },
+                    "clearedAt": { "column": "SimClearDate", "format": "jalaliText", "status": "candidate" },
+                    "change": { "strategy": "full" } },
+        "vendorPayment": { "object": "SimVendorPay", "kind": "table", "hostFiltered": false, "status": "candidate",
+                    "key": { "column": "PayID", "status": "candidate" },
+                    "vendorKey": { "column": "VendorID", "status": "candidate" },
+                    "date": { "column": "SimPayDate", "format": "jalaliText", "status": "candidate" },
+                    "amount": { "column": "PayAmt", "amountSign": "asIs", "status": "candidate" },
+                    "instrumentType": { "column": "PayTp", "status": "candidate" },
+                    "change": { "strategy": "full" } }
+      }
+    }
+    """;
+
+    private static SourceMap CandidateMap() =>
+        SourceMap.Parse(CandidateBalanceJson).Map!;
 
     [Fact]
-    public void Summary_in_demo_is_the_unavailable_body_with_the_demo_label()
+    public void Production_with_a_candidate_balance_formula_never_shows_a_balance()
     {
-        AssertUnavailable(new VendorFinancialsController(Demo).Summary(), "demo");
+        var reasons = VendorFinancialAvailability.Evaluate(
+            CandidateMap(), isProduction: true, hasSucceededSync: true);
+
+        Assert.Equal(VendorFinancialAvailability.FormulaUnconfirmed, reasons["vendorBalance"]);
     }
 
     [Fact]
-    public void Summary_in_production_is_the_unavailable_body_with_the_real_label()
+    public void Demo_with_a_candidate_balance_formula_shows_the_balance()
     {
-        AssertUnavailable(new VendorFinancialsController(Production).Summary(), "real");
+        var reasons = VendorFinancialAvailability.Evaluate(
+            CandidateMap(), isProduction: false, hasSucceededSync: true);
+
+        Assert.Null(reasons["vendorBalance"]);
+        Assert.Null(reasons["outstandingPayments"]);
+        Assert.Null(reasons["payments"]);
     }
 
     [Fact]
-    public void Vendor_is_the_unavailable_body_for_any_key()
+    public void Production_without_a_successful_sync_is_no_successful_sync_not_a_formula_guess()
     {
-        AssertUnavailable(new VendorFinancialsController(Demo).Vendor("SimVendor-1"), "demo");
-        AssertUnavailable(new VendorFinancialsController(Production).Vendor("SimVendor-1"), "real");
+        var reasons = VendorFinancialAvailability.Evaluate(
+            CandidateMap(), isProduction: true, hasSucceededSync: false);
+
+        Assert.Equal(VendorFinancialAvailability.NoSuccessfulSync, reasons["vendorBalance"]);
     }
 
-    private static void AssertUnavailable(IActionResult result, string dataLabel)
+    [Fact]
+    public void The_persian_unavailable_message_is_the_shared_one()
     {
-        var ok = Assert.IsType<OkObjectResult>(result);
-        Assert.Equal(200, ok.StatusCode);
-
-        using var document = JsonDocument.Parse(JsonSerializer.Serialize(ok.Value));
-        var root = document.RootElement;
-
-        Assert.Equal(
-            new[] { "available", "reason", "message", "dataLabel" },
-            root.EnumerateObject().Select(property => property.Name).ToArray());
-        Assert.False(root.GetProperty("available").GetBoolean());
-        Assert.Equal("not-available-until-phase-6", root.GetProperty("reason").GetString());
-        Assert.Equal("داده در دسترس نیست.", root.GetProperty("message").GetString());
-        Assert.Equal(dataLabel, root.GetProperty("dataLabel").GetString());
-
-        // No figure: no JSON number anywhere in the body.
-        Assert.DoesNotContain(
-            root.EnumerateObject().Select(property => property.Value.ValueKind),
-            kind => kind == JsonValueKind.Number);
+        Assert.Equal("داده در دسترس نیست.", VendorFinancialUnavailable.PersianMessage);
+        Assert.Equal("داده در دسترس نیست.", VendorFinancialDtos.DataMessage);
     }
 }

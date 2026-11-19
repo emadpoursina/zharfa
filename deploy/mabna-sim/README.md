@@ -312,6 +312,48 @@ if any, must stay generic (no real names) in `gen_seed.py` and/or `seedgen.py`. 
 (`example/purchase-source-map.example.json`) already carries the Phase 2 items with the made-up
 names `SimVendorCode`, `SimDrugGroupID` and `dbo.SimDrugGroup` (`DrugGroupID`, `DrugGroupName`).
 
+## Phase 6 vendor financials scenario (spec 008)
+
+Synthetic payables, cheque and payment data for the Financials screens, `reconcile vendor-balance` and the
+data-quality financial rules (quickstart flows A–E, H). All names are made up (`Sim*`); no real row or
+company name is ever read or embedded.
+
+**Tracked example (fully offline).** `example/schema-capture.example.txt` now carries the vendor-financial
+tables `dbo.SimVendor` (`VendorID`, `VendorName`, `SimVendorCode`), `dbo.SimPayAccDoc`, `dbo.SimPayChq`,
+`dbo.SimVendorPay` and the optional `dbo.SimPayAlloc` with the columns the example source map
+(`example/purchase-source-map.example.json`) maps. `gen_schema.py` emits their DDL from the example capture,
+and `gen_seed.py --capture example/schema-capture.example.txt` seeds the demo cases below through the
+`FINANCIAL_EXAMPLE` hook in `seedgen.py` (keyed on those made-up names only — a real capture never carries
+them, so on-site generation is untouched; an unrecognised shape falls back to the generic filler).
+
+**Full simulator (gitignored `generated/`, same pattern as the Phase 1–2 scenario).** Add the same four
+tables/columns to the capture/scenario inputs and regenerate as in the sections above; the example map and
+allowlist already list the objects (`dbo.SimPayAccDoc`, `dbo.SimPayChq`, `dbo.SimVendorPay`, `dbo.SimPayAlloc`,
+all `hostFiltered: false`, `balanceFormula.status = "candidate"`, `mix = "openPayablesPlusUnpaidCheques"`).
+If the scenario seeds the financial tables itself, its rows win over the example hook.
+
+Seeded demo cases (required by `specs/008-vendor-financials/tasks.md` T025):
+
+- a **credit vendor**: payables whose signed total is negative (`RemainAmt` below zero) — Financials shows a
+  leading `-` on its مانده تأمین‌کننده, never floored at zero;
+- **one vendor with purchases and payments in the same Jalali month**: the example seeds its payables and
+  payments in **1405/07** (test month of the reconcile and data-quality flows); date at least one purchase
+  document of that same vendor (the second `SimVendor` row) in 1405/07 in the purchase scenario, so
+  purchases vs payments has both sides in one period;
+- **vendors with zero payables**: the last two vendor rows carry no payable, cheque or payment — they appear
+  on Financials with `"0.0000"`, not "data unavailable";
+- **fully open and fully cleared cheques**: open rows keep `SimClearDate` NULL; a fully cleared row has a clear
+  date and `ChqState = 'cleared'` (one cheque clears after 1405/07 month end, so it is still outstanding at
+  as-of 1405/07/09 and closed from 1405/07/11);
+- one **cancelled** payable, cheque and payment (`IsCanceled = 1`) — excluded from every figure;
+- one **partial-pay row**: a 7,000,000 cheque with 2,000,000 remaining plus a 5,000,000 payment — seeded as a
+  documented **candidate** for unit tests of the split rule (paid portion in پرداخت‌ها, remainder in
+  پرداخت‌های معوق, counted once). Demo Financials does not depend on it.
+
+The financial objects join the allowlist file used by the sync and `reconcile vendor-balance`; regenerate
+`generated/allowlist.txt` together with the map. `dq_bad_records.py` (below) additionally seeds flagged
+payable/cheque/payment rows so Admin → Data quality lists them while the Financials figures keep computing.
+
 ## Data-quality bad records (spec 005, US4)
 
 `dq_bad_records.py` seeds synthetic bad records into the simulator so the Data quality page and the report notices can be
@@ -329,9 +371,13 @@ sqlcmd -S 127.0.0.1,14330 -U sa -P "$MABNA_SIM_SA_PASSWORD" -b -i deploy/mabna-s
 ```
 
 The apply script ends with the manifest (`issue_type`, `seeded`). Expected seeded counts with the example map and every
-item mapped: missing-values 4, duplicate-records 1, broken-relationships 3, inconsistent-product-ids 1, invalid-dates 2,
-unexpected-quantities 2, inconsistent-amounts 3. The tracked example maps no `purchaseInvoice.docDiscount` column, so its
-record 16 (document discount) is skipped and inconsistent-amounts shows 2; the skipped records are listed after the manifest.
+item mapped: missing-values 5, duplicate-records 2, broken-relationships 4, inconsistent-product-ids 1, invalid-dates 5,
+unexpected-quantities 2, inconsistent-amounts 3. Records 17–23 are the Phase 6 financial rows (payable without vendor,
+cheque vendor not in the master, future/too-early dates on payables, cheques and payments, cheque remaining above its
+face amount, duplicate payment reference); they are generated only when the map carries the financial entities, so a
+purchasing-only map keeps the earlier purchase counts (missing-values 4, duplicate-records 1, broken-relationships 3,
+invalid-dates 2, inconsistent-amounts 3). The tracked example maps no `purchaseInvoice.docDiscount` column, so its
+record 16 (document discount) is skipped; the skipped records are listed after the manifest.
 
 Counts rise by exactly the seeded number after the next sync; the synced copy already has baseline issues from the
 Phase 2 scenario, so compare with the baseline counts taken before applying (research R17). After the revert and the next

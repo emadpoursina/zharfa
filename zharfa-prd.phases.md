@@ -106,7 +106,7 @@
 - [ ] A figure whose source is unverified shows "data unavailable"
 - [ ] Purchasing users cannot see financials in pages, exports, saved reports, or AI answers
 **Out of scope:** Customer receivables and cash received (Release 2), profitability and inventory valuation (Releases 2–3).
-**Spec:** none
+**Spec:** specs/008-vendor-financials
 
 ## Phase 7: Go-live on the LAN server
 

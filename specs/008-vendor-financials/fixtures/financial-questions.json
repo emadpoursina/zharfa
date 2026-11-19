@@ -1,0 +1,62 @@
+[
+  {
+    "id": 1,
+    "question": "مانده حساب تأمین‌کننده شرکت البرز در ماه جاری چقدر است؟",
+    "askAs": "finance",
+    "expect": "cited-or-unavailable",
+    "scope": "vendor-financials",
+    "tool": "vendor_balance",
+    "metric": "vendorBalance",
+    "note": "Amount must match GET /api/vendor-financials/vendors/{key} vendorBalance, or answer must state «داده در دسترس نیست»."
+  },
+  {
+    "id": 2,
+    "question": "مجموع پرداخت‌های انجام‌شده به داروسازی تهران در این ماه چقدر بوده است؟",
+    "askAs": "management",
+    "expect": "cited-or-unavailable",
+    "scope": "vendor-financials",
+    "tool": "vendor_payments",
+    "metric": "payments",
+    "note": "Amount must match GET /api/vendor-financials/vendors/{key} purchasesVsPayments.payments."
+  },
+  {
+    "id": 3,
+    "question": "اسناد پرداختنی و چک‌های معوق تا پایان این ماه چقدر است؟",
+    "askAs": "finance",
+    "expect": "cited-or-unavailable",
+    "scope": "vendor-financials",
+    "tool": "vendor_outstanding",
+    "metric": "outstandingPayments",
+    "note": "Amount must match GET /api/vendor-financials/vendors/{key} outstandingPayments."
+  },
+  {
+    "id": 4,
+    "question": "خرید در برابر پرداخت برای تأمین‌کننده البرز در این ماه چگونه است؟",
+    "askAs": "management",
+    "expect": "cited-or-unavailable",
+    "scope": "vendor-financials",
+    "tool": "vendor_purchases_vs_payments",
+    "metric": "purchasesMinusPayments",
+    "note": "Must present net purchases, payments and خرید منهای پرداخت separately. Never label difference as profit."
+  },
+  {
+    "id": 5,
+    "question": "کدام تأمین‌کنندگان بیشترین مانده بدهی را دارند؟",
+    "askAs": "finance",
+    "expect": "cited-or-unavailable",
+    "scope": "vendor-financials",
+    "tool": "vendor_financials_list",
+    "metric": "vendorBalance",
+    "note": "Visual-capable ranking. Amounts match Financials list summary."
+  },
+  {
+    "id": 6,
+    "question": "مانده حساب و بدهی تأمین‌کنندگان چقدر است؟",
+    "askAs": "purchasing",
+    "expect": "no-digits",
+    "scope": "vendor-financials",
+    "tool": null,
+    "metric": null,
+    "note": "Purchasing control row: caller lacks vendor.financials permission. Must return 200 with «داده در دسترس نیست» and zero digits."
+  }
+]

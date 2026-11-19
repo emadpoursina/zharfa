@@ -71,6 +71,23 @@ public sealed class SourceMapChange
     public string? Column { get; set; }
 }
 
+/// <summary>Top-level balance formula marker (Phase 6, contracts/source-map.md).</summary>
+public sealed class SourceMapBalanceFormula
+{
+    /// <summary>confirmed | corrected | candidate | unknown.</summary>
+    public string? Status { get; set; }
+
+    /// <summary>Candidate mix id, e.g. openPayablesPlusUnpaidCheques.</summary>
+    public string? Mix { get; set; }
+}
+
+/// <summary>Top-level partial-payment split marker (Phase 6, research R4).</summary>
+public sealed class SourceMapPartialPayment
+{
+    /// <summary>confirmed | corrected | candidate | unknown.</summary>
+    public string? Status { get; set; }
+}
+
 /// <summary>One mapped source entity (vendor, product, invoice, return, line).</summary>
 public sealed class SourceMapEntity
 {
@@ -102,6 +119,26 @@ public sealed class SourceMapEntity
 
     /// <summary>Phase 2, optional: the drug group key of a product (product entity only).</summary>
     public SourceMapField? CategoryKey { get; set; }
+
+    // ---- Phase 6 (vendor financials), all optional ----
+
+    /// <summary>Face / paid amount (payableCheque.amount, vendorPayment.amount, paymentAllocation.amount).</summary>
+    public SourceMapAmountField? Amount { get; set; }
+
+    /// <summary>Document / instrument remaining amount (payableDocument signed, payableCheque non-negative).</summary>
+    public SourceMapAmountField? RemainingAmount { get; set; }
+
+    /// <summary>Instrument type column + status (payableCheque, vendorPayment).</summary>
+    public SourceMapField? InstrumentType { get; set; }
+
+    /// <summary>Open/paid/cancelled state column + status (payableCheque).</summary>
+    public SourceMapField? State { get; set; }
+
+    /// <summary>Payment/clear date (payableCheque.clearedAt).</summary>
+    public SourceMapDateField? ClearedAt { get; set; }
+
+    /// <summary>Link to the cheque/document the payment settles (vendorPayment, paymentAllocation).</summary>
+    public SourceMapField? InstrumentKey { get; set; }
 
     public SourceMapDateField? Date { get; set; }
     public SourceMapAmountField? GrossAmount { get; set; }
@@ -137,6 +174,19 @@ public sealed class SourceMap
 
     /// <summary>Phase 2, optional: the drug group master (product categories).</summary>
     public SourceMapEntity? ProductCategory { get; private set; }
+
+    // ---- Phase 6, optional: the vendor-financial entities. Missing = valid map, financial figures unavailable. ----
+
+    public SourceMapEntity? PayableDocument { get; private set; }
+    public SourceMapEntity? PayableCheque { get; private set; }
+    public SourceMapEntity? VendorPayment { get; private set; }
+    public SourceMapEntity? PaymentAllocation { get; private set; }
+
+    /// <summary>Top-level balance formula marker; null when the map does not declare one (balance unavailable).</summary>
+    public SourceMapBalanceFormula? BalanceFormula { get; private set; }
+
+    /// <summary>Top-level partial-payment marker; null when the map does not declare one.</summary>
+    public SourceMapPartialPayment? PartialPayment { get; private set; }
 
     /// <summary>Loads from <c>MabnaSync__SourceMapFile</c>; unset → not configured.</summary>
     public static SourceMapLoadResult LoadFromFile(string? path)
@@ -237,6 +287,36 @@ public sealed class SourceMap
                 }
             }
 
+            // Phase 6 optional top-level markers (contracts/source-map.md). Absent is valid.
+            if (root.TryGetProperty("balanceFormula", out var balance) &&
+                balance.ValueKind == JsonValueKind.Object)
+            {
+                var formula = new SourceMapBalanceFormula();
+                if (TryString(balance, "status", out var formulaStatus))
+                {
+                    formula.Status = formulaStatus;
+                }
+
+                if (TryString(balance, "mix", out var mix))
+                {
+                    formula.Mix = mix;
+                }
+
+                map.BalanceFormula = formula;
+            }
+
+            if (root.TryGetProperty("partialPayment", out var partial) &&
+                partial.ValueKind == JsonValueKind.Object)
+            {
+                var partialPayment = new SourceMapPartialPayment();
+                if (TryString(partial, "status", out var partialStatus))
+                {
+                    partialPayment.Status = partialStatus;
+                }
+
+                map.PartialPayment = partialPayment;
+            }
+
             if (!root.TryGetProperty("entities", out var entities) ||
                 entities.ValueKind != JsonValueKind.Object)
             {
@@ -253,6 +333,10 @@ public sealed class SourceMap
             map.PurchaseReturn = ReadEntity(entities, "purchaseReturn");
             map.PurchaseLine = ReadEntity(entities, "purchaseLine");
             map.ProductCategory = ReadEntity(entities, "productCategory");
+            map.PayableDocument = ReadEntity(entities, "payableDocument");
+            map.PayableCheque = ReadEntity(entities, "payableCheque");
+            map.VendorPayment = ReadEntity(entities, "vendorPayment");
+            map.PaymentAllocation = ReadEntity(entities, "paymentAllocation");
 
             var problems = new List<SourceMapProblem>();
             if (map.PurchaseInvoice is null)
@@ -397,6 +481,11 @@ public sealed class SourceMap
         entity.Vat = ReadField(element, "vat");
         entity.Code = ReadField(element, "code");
         entity.CategoryKey = ReadField(element, "categoryKey");
+        entity.Amount = ReadAmountField(element, "amount");
+        entity.RemainingAmount = ReadAmountField(element, "remainingAmount");
+        entity.InstrumentType = ReadField(element, "instrumentType");
+        entity.State = ReadField(element, "state");
+        entity.InstrumentKey = ReadField(element, "instrumentKey");
 
         if (element.TryGetProperty("date", out var date) && date.ValueKind == JsonValueKind.Object)
         {
@@ -438,6 +527,28 @@ public sealed class SourceMap
             }
 
             entity.GrossAmount = gf;
+        }
+
+        // Phase 6: clearedAt is a date field (format as the other dates).
+        if (element.TryGetProperty("clearedAt", out var clearedAt) && clearedAt.ValueKind == JsonValueKind.Object)
+        {
+            var cf = new SourceMapDateField();
+            if (TryString(clearedAt, "column", out var clearedColumn))
+            {
+                cf.Column = clearedColumn;
+            }
+
+            if (TryString(clearedAt, "format", out var clearedFormat))
+            {
+                cf.Format = clearedFormat;
+            }
+
+            if (TryString(clearedAt, "status", out var clearedStatus))
+            {
+                cf.Status = clearedStatus;
+            }
+
+            entity.ClearedAt = cf;
         }
 
         if (element.TryGetProperty("cancelled", out var cancelled) && cancelled.ValueKind == JsonValueKind.Object)
@@ -507,6 +618,43 @@ public sealed class SourceMap
         if (TryString(element, "column", out var column))
         {
             field.Column = column;
+        }
+
+        if (TryString(element, "status", out var status))
+        {
+            field.Status = status;
+        }
+
+        return field;
+    }
+
+    /// <summary>An amount field with its sign convention (asIs | negate | abs).</summary>
+    private static SourceMapAmountField? ReadAmountField(JsonElement parent, string name)
+    {
+        if (!parent.TryGetProperty(name, out var element))
+        {
+            return null;
+        }
+
+        if (element.ValueKind == JsonValueKind.Null)
+        {
+            return new SourceMapAmountField(); // column: null → unusable, not an error
+        }
+
+        if (element.ValueKind != JsonValueKind.Object)
+        {
+            return null;
+        }
+
+        var field = new SourceMapAmountField();
+        if (TryString(element, "column", out var column))
+        {
+            field.Column = column;
+        }
+
+        if (TryString(element, "amountSign", out var sign))
+        {
+            field.AmountSign = sign;
         }
 
         if (TryString(element, "status", out var status))

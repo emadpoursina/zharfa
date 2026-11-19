@@ -129,6 +129,8 @@ builder.Services.AddMabnaSource(builder.Configuration);
 // Purchasing sync (spec 003, US2): store, runner, coordinator and the nightly scheduler.
 builder.Services.AddPurchasingSync(builder.Configuration, builder.Environment, dataMode);
 builder.Services.AddSingleton<PurchasingReconciliation>();
+// Phase 6 (spec 008 US4): `reconcile vendor-balance` beside `reconcile purchasing` (contracts/cli-and-config.md).
+builder.Services.AddSingleton<Zharfa.Api.Purchasing.VendorBalanceReconciliation>();
 // Overview (spec 003, US5): server-side purchasing figures for Manager and Admin (contracts/api.md §3).
 builder.Services.AddScoped<PurchasingOverviewService>();
 // Purchasing reports (spec 004): report engine, vendor directory and profile, vendor comparison (contracts/api.md).
@@ -144,6 +146,9 @@ builder.Services.AddSingleton<Zharfa.Api.Audit.ReportOpenTracker>();
 builder.Services.AddScoped<Zharfa.Api.Audit.AuditLogService>();
 builder.Services.AddScoped<Zharfa.Api.DataQuality.DataQualityService>();
 builder.Services.AddScoped<Zharfa.Api.DataQuality.DataQualityNoticeService>();
+// Vendor financials (spec 008, US2): SQL layer + service behind the reserved vendor.financials controller.
+builder.Services.AddScoped<Zharfa.Api.VendorFinancials.VendorFinancialSql>();
+builder.Services.AddScoped<Zharfa.Api.VendorFinancials.VendorFinancialsService>();
 
 var capturePath = ConfigurationKeys.Get(builder.Configuration, "AiProvider__CapturePath")
     ?? builder.Configuration["AiProvider:CapturePath"]
@@ -175,6 +180,7 @@ builder.Services.AddScoped<ActiveAiProvider>();
 builder.Services.AddScoped<IAiProvider>(sp => sp.GetRequiredService<ActiveAiProvider>());
 builder.Services.AddScoped<AnalystTools>();
 builder.Services.AddScoped<PurchasingAnalystTools>();
+builder.Services.AddScoped<VendorFinancialAnalystTools>();
 
 builder.Services.AddAuthentication(CookieAuthenticationDefaults.AuthenticationScheme)
     .AddCookie(options =>

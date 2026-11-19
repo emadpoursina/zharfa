@@ -24,7 +24,8 @@ public class AuditActionsTests
     [
         "overview", "vendors", "vendor-profile", "by-vendor", "by-product", "by-category", "trend",
         "top-products", "returns", "transactions", "vendors-compare", "drill-down", "drill-down-lines",
-        "generated",
+        "generated", "vendor-financials", "vendor-financials-detail", "vendor-financials-history",
+        "vendor-financials-outstanding",
     ];
 
     [Fact]
@@ -66,7 +67,7 @@ public class AuditActionsTests
     }
 
     [Fact]
-    public void Report_keys_are_the_fourteen_keys_with_persian_names()
+    public void Report_keys_are_the_eighteen_keys_with_persian_names()
     {
         Assert.Equal(ExpectedReportKeys.OrderBy(key => key), ReportKeys.All.OrderBy(key => key));
         Assert.Equal("گزارش تولیدشده", ReportKeys.Name(ReportKeys.Generated));

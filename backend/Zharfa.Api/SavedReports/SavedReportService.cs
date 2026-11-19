@@ -20,6 +20,7 @@ using Zharfa.Api.Platform;
 using Zharfa.Api.Purchasing;
 using Zharfa.Api.Purchasing.Reports;
 using Zharfa.Api.Security;
+using Zharfa.Api.VendorFinancials;
 
 public sealed record SaveReportRequest(
     string Name,
@@ -73,7 +74,9 @@ public class SavedReportService(
     PurchasingAnalystTools analystTools,
     DataModeOptions dataMode,
     IOptions<SyncOptions> syncOptions,
-    ILogger<SavedReportService> logger)
+    ILogger<SavedReportService> logger,
+    VendorFinancialsService? financialsService = null,
+    VendorFinancialAnalystTools? financialAnalystTools = null)
 {
     private static readonly HashSet<string> AllowedKinds = new(StringComparer.Ordinal)
     {
@@ -88,7 +91,19 @@ public class SavedReportService(
         "vendors-compare",
         "drill-down",
         "vendor-profile",
-        "generated"
+        "generated",
+        "vendor-financials",
+        "vendor-financials-history",
+        "vendor-financials-outstanding",
+        "vendor-financials-purchases-vs-payments"
+    };
+
+    private static readonly HashSet<string> FinancialKinds = new(StringComparer.Ordinal)
+    {
+        "vendor-financials",
+        "vendor-financials-history",
+        "vendor-financials-outstanding",
+        "vendor-financials-purchases-vs-payments"
     };
 
     public async Task<SavedReportListEnvelope> ListAsync(long userId, CancellationToken ct)
@@ -390,6 +405,104 @@ public class SavedReportService(
             }
         }
 
+        if (data is VendorFinancialsSummaryResponse summary)
+        {
+            var headers = new List<string> { "نام", "کد", "مانده تأمین‌کننده", "پرداخت‌های معوق" };
+            var rows = summary.Rows.Select(r => (IReadOnlyList<string>)new[]
+            {
+                r.Name,
+                r.Code ?? "-",
+                r.VendorBalance ?? "-",
+                r.OutstandingPayments ?? "-"
+            }).ToList();
+
+            return new ExportTable(
+                ReportName: report.Name,
+                PeriodLabel: period.Label,
+                FiltersLabel: "بدون فیلتر",
+                ExportedAtJalali: nowJalali,
+                LastSyncJalali: summary.LastSuccessfulSync?.AtJalali,
+                DataLabel: dataMode.DataLabel,
+                DataQualityText: summary.DataQuality?.AffectedRecords > 0 ? $"توجه کیفیت داده: {summary.DataQuality.AffectedRecords} رکورد پرچم‌دار در این بازه وجود دارد." : null,
+                Headers: headers,
+                Rows: rows,
+                TotalRows: summary.TotalRows);
+        }
+
+        if (data is VendorFinancialListResponse<PaymentHistoryRow> history)
+        {
+            var headers = new List<string> { "تاریخ پرداخت", "مرجع", "نوع سند", "مبلغ" };
+            var rows = history.Rows.Select(r => (IReadOnlyList<string>)new[]
+            {
+                r.PaidAtJalali,
+                r.Reference ?? "-",
+                r.InstrumentTypeLabel,
+                r.Amount
+            }).ToList();
+
+            return new ExportTable(
+                ReportName: report.Name,
+                PeriodLabel: period.Label,
+                FiltersLabel: "بدون فیلتر",
+                ExportedAtJalali: nowJalali,
+                LastSyncJalali: history.LastSuccessfulSync?.AtJalali,
+                DataLabel: dataMode.DataLabel,
+                DataQualityText: history.DataQuality?.AffectedRecords > 0 ? $"توجه کیفیت داده: {history.DataQuality.AffectedRecords} رکورد پرچم‌دار در این بازه وجود دارد." : null,
+                Headers: headers,
+                Rows: rows,
+                TotalRows: history.TotalRows);
+        }
+
+        if (data is VendorFinancialListResponse<OutstandingInstrumentRow> outstanding)
+        {
+            var headers = new List<string> { "تاریخ", "مرجع", "نوع سند", "مبلغ معوق" };
+            var rows = outstanding.Rows.Select(r => (IReadOnlyList<string>)new[]
+            {
+                r.DateJalali,
+                r.Reference ?? "-",
+                r.InstrumentTypeLabel,
+                r.UnpaidAmount
+            }).ToList();
+
+            return new ExportTable(
+                ReportName: report.Name,
+                PeriodLabel: period.Label,
+                FiltersLabel: "بدون فیلتر",
+                ExportedAtJalali: nowJalali,
+                LastSyncJalali: outstanding.LastSuccessfulSync?.AtJalali,
+                DataLabel: dataMode.DataLabel,
+                DataQualityText: outstanding.DataQuality?.AffectedRecords > 0 ? $"توجه کیفیت داده: {outstanding.DataQuality.AffectedRecords} رکورد پرچم‌دار در این بازه وجود دارد." : null,
+                Headers: headers,
+                Rows: rows,
+                TotalRows: outstanding.TotalRows);
+        }
+
+        if (data is VendorFinancialDetailResponse detail)
+        {
+            var headers = new List<string> { "خالص خرید", "پرداخت‌ها", "خرید منهای پرداخت" };
+            var rows = new List<IReadOnlyList<string>>
+            {
+                new[]
+                {
+                    detail.PurchasesVsPayments.NetPurchases ?? "-",
+                    detail.PurchasesVsPayments.Payments ?? "-",
+                    detail.PurchasesVsPayments.PurchasesMinusPayments ?? "-"
+                }
+            };
+
+            return new ExportTable(
+                ReportName: report.Name,
+                PeriodLabel: period.Label,
+                FiltersLabel: $"تأمین‌کننده: {detail.Vendor.Name}",
+                ExportedAtJalali: nowJalali,
+                LastSyncJalali: detail.LastSuccessfulSync?.AtJalali,
+                DataLabel: dataMode.DataLabel,
+                DataQualityText: detail.DataQuality?.AffectedRecords > 0 ? $"توجه کیفیت داده: {detail.DataQuality.AffectedRecords} رکورد پرچم‌دار در این بازه وجود دارد." : null,
+                Headers: headers,
+                Rows: rows,
+                TotalRows: 1);
+        }
+
         return new ExportTable(
             ReportName: report.Name,
             PeriodLabel: period.Label,
@@ -425,8 +538,29 @@ public class SavedReportService(
         string requiredPermission;
         string? generatedJson = null;
 
-        if (request.Kind == "generated")
+        if (FinancialKinds.Contains(request.Kind))
         {
+            if (!user.HasPermission(Permissions.VendorFinancials))
+            {
+                return new SaveReportResult(false, 403, Message: "برای مشاهده این گزارش به دسترسی «اطلاعات مالی تأمین‌کنندگان» نیاز است.");
+            }
+
+            requiredPermission = Permissions.VendorFinancials;
+        }
+        else if (request.Kind == "generated")
+        {
+            var isFinancialTool = false;
+            if (request.Generated.HasValue && request.Generated.Value.ValueKind == JsonValueKind.Object)
+            {
+                var genTool = request.Generated.Value.TryGetProperty("tool", out var toolProp) ? toolProp.GetString() : null;
+                isFinancialTool = genTool != null && VendorFinancialAnalystTools.AllowlistedToolNames.Contains(genTool);
+            }
+
+            if (isFinancialTool && !user.HasPermission(Permissions.VendorFinancials))
+            {
+                return new SaveReportResult(false, 403, Message: "برای مشاهده این گزارش به دسترسی «اطلاعات مالی تأمین‌کنندگان» نیاز است.");
+            }
+
             if (!user.HasPermission(Permissions.AiQuery))
             {
                 return new SaveReportResult(false, 403, Message: "شما دسترسی پرسش از دستیار هوشمند (ai.query) را ندارید.");
@@ -438,13 +572,14 @@ public class SavedReportService(
             }
 
             var root = request.Generated.Value;
-            var tool = root.TryGetProperty("tool", out var toolProp) ? toolProp.GetString() : null;
-            if (string.IsNullOrWhiteSpace(tool) || !PurchasingAnalystTools.AllowlistedToolNames.Contains(tool))
+            var tool = root.TryGetProperty("tool", out var toolProp2) ? toolProp2.GetString() : null;
+            if (string.IsNullOrWhiteSpace(tool) ||
+                (!PurchasingAnalystTools.AllowlistedToolNames.Contains(tool) && !VendorFinancialAnalystTools.AllowlistedToolNames.Contains(tool)))
             {
                 return new SaveReportResult(false, 400, Message: "ابزار تولید گزارش نامعتبر است.");
             }
 
-            requiredPermission = Permissions.AiQuery;
+            requiredPermission = isFinancialTool ? Permissions.VendorFinancials : Permissions.AiQuery;
             generatedJson = request.Generated.Value.GetRawText();
         }
         else
@@ -566,6 +701,18 @@ public class SavedReportService(
         }
 
         // Check required permissions
+        if (FinancialKinds.Contains(report.Kind) || report.RequiredPermission == Permissions.VendorFinancials)
+        {
+            if (!user.HasPermission(Permissions.VendorFinancials))
+            {
+                return new OpenReportResult(
+                    false,
+                    403,
+                    ErrorMessage: "برای مشاهده این گزارش به دسترسی «اطلاعات مالی تأمین‌کنندگان» نیاز است.",
+                    MissingPermission: Permissions.VendorFinancials);
+            }
+        }
+
         if (report.Kind == "generated")
         {
             if (!user.HasPermission(Permissions.AiQuery))
@@ -575,6 +722,20 @@ public class SavedReportService(
                     403,
                     ErrorMessage: "دسترسی پرسش از دستیار هوشمند (ai.query) برای این گزارش لازم است.",
                     MissingPermission: Permissions.AiQuery);
+            }
+
+            using var genDoc = JsonDocument.Parse(report.GeneratedJson ?? "{}");
+            var tool = genDoc.RootElement.TryGetProperty("tool", out var toolProp) ? toolProp.GetString() : null;
+            if (tool != null && VendorFinancialAnalystTools.AllowlistedToolNames.Contains(tool))
+            {
+                if (!user.HasPermission(Permissions.VendorFinancials))
+                {
+                    return new OpenReportResult(
+                        false,
+                        403,
+                        ErrorMessage: "برای مشاهده این گزارش به دسترسی «اطلاعات مالی تأمین‌کنندگان» نیاز است.",
+                        MissingPermission: Permissions.VendorFinancials);
+                }
             }
         }
         else if (report.Kind == "transactions")
@@ -642,8 +803,11 @@ public class SavedReportService(
         }
 
         using var argsDoc = JsonDocument.Parse(JsonSerializer.Serialize(dict));
-        var toolResult = await analystTools.DispatchAsync(tool ?? "purchasing_top_products", period, ct, argsDoc.RootElement);
-        var visual = VisualBuilder.Build(null, tool ?? "purchasing_top_products", period, toolResult, dataMode.DataLabel);
+        var isFinancial = tool != null && VendorFinancialAnalystTools.AllowlistedToolNames.Contains(tool);
+        var toolResult = isFinancial && financialAnalystTools != null
+            ? await financialAnalystTools.DispatchAsync(tool!, period, ct, argsDoc.RootElement)
+            : await analystTools.DispatchAsync(tool ?? "purchasing_top_products", period, ct, argsDoc.RootElement);
+        var visual = VisualBuilder.Build(null, tool ?? (isFinancial ? "vendor_financials_list" : "purchasing_top_products"), period, toolResult, dataMode.DataLabel);
 
         var filtersDto = new PurchasingFiltersDto(
             Vendor: toolResult.Vendor,
@@ -781,6 +945,74 @@ public class SavedReportService(
                     }
                 }
                 resultBody = profile ?? (object)new { message = "تأمین‌کننده یافت نشد." };
+                break;
+            }
+
+            case "vendor-financials":
+            {
+                var finRequest = new VendorFinancialRequest(
+                    Period: period,
+                    Compare: compare,
+                    Search: null,
+                    NormalizedSearch: string.Empty,
+                    Page: 1,
+                    PageSize: pageSize,
+                    Sort: sort ?? "vendorBalance",
+                    Descending: desc);
+                resultBody = financialsService != null
+                    ? await financialsService.SummaryAsync(finRequest, ct)
+                    : new { message = "سرویس مالی در دسترس نیست." };
+                break;
+            }
+
+            case "vendor-financials-history":
+            {
+                var finRequest = new VendorFinancialRequest(
+                    Period: period,
+                    Compare: false,
+                    Search: null,
+                    NormalizedSearch: string.Empty,
+                    Page: 1,
+                    PageSize: pageSize,
+                    Sort: sort ?? "paidAt",
+                    Descending: desc);
+                resultBody = financialsService != null && vendor != null
+                    ? await financialsService.HistoryAsync(vendor, finRequest, ct)
+                    : new { message = "تأمین‌کننده مشخص نشده است." };
+                break;
+            }
+
+            case "vendor-financials-outstanding":
+            {
+                var finRequest = new VendorFinancialRequest(
+                    Period: period,
+                    Compare: false,
+                    Search: null,
+                    NormalizedSearch: string.Empty,
+                    Page: 1,
+                    PageSize: pageSize,
+                    Sort: sort ?? "date",
+                    Descending: desc);
+                resultBody = financialsService != null && vendor != null
+                    ? await financialsService.OutstandingAsync(vendor, finRequest, ct)
+                    : new { message = "تأمین‌کننده مشخص نشده است." };
+                break;
+            }
+
+            case "vendor-financials-purchases-vs-payments":
+            {
+                var finRequest = new VendorFinancialRequest(
+                    Period: period,
+                    Compare: compare,
+                    Search: null,
+                    NormalizedSearch: string.Empty,
+                    Page: 1,
+                    PageSize: pageSize,
+                    Sort: "name",
+                    Descending: false);
+                resultBody = financialsService != null && vendor != null
+                    ? await financialsService.DetailAsync(vendor, finRequest, ct) ?? (object)new { message = "تأمین‌کننده یافت نشد." }
+                    : new { message = "تأمین‌کننده مشخص نشده است." };
                 break;
             }
 

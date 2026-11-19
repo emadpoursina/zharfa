@@ -21,14 +21,54 @@ section|SchemaName|ObjectName|type_desc|ordinal|column_name|type_name|base_type|
 4 columns|dbo|SimCheque|USER_TABLE|5|ChqState|tinyint|tinyint|1|3|0|0|0|0|NULL|NULL|NULL|NULL|NULL
 4 columns|dbo|SimCheque|USER_TABLE|6|Amount|decimal|decimal|9|18|0|0|0|0|NULL|NULL|NULL|NULL|NULL
 4 columns|dbo|SimCheque|USER_TABLE|7|Note|nvarchar|nvarchar|200|0|0|1|0|0|Persian_100_CI_AS|NULL|NULL|NULL|NULL
+4 columns|dbo|SimVendor|USER_TABLE|1|VendorID|int|int|4|10|0|0|1|0|NULL|1|1|NULL|NULL
+4 columns|dbo|SimVendor|USER_TABLE|2|VendorName|nvarchar|nvarchar|120|0|0|0|0|0|Persian_100_CI_AS|NULL|NULL|NULL|NULL
+4 columns|dbo|SimVendor|USER_TABLE|3|SimVendorCode|nvarchar|nvarchar|40|0|0|1|0|0|Persian_100_CI_AS|NULL|NULL|NULL|NULL
+4 columns|dbo|SimPayAccDoc|USER_TABLE|1|PayDocID|int|int|4|10|0|0|1|0|NULL|1|1|NULL|NULL
+4 columns|dbo|SimPayAccDoc|USER_TABLE|2|VendorID|int|int|4|10|0|1|0|0|NULL|NULL|NULL|NULL|NULL
+4 columns|dbo|SimPayAccDoc|USER_TABLE|3|SimDocDate|nvarchar|nvarchar|20|0|0|0|0|0|Persian_100_CI_AS|NULL|NULL|NULL|NULL
+4 columns|dbo|SimPayAccDoc|USER_TABLE|4|SimDocNumber|nvarchar|nvarchar|60|0|0|1|0|0|Persian_100_CI_AS|NULL|NULL|NULL|NULL
+4 columns|dbo|SimPayAccDoc|USER_TABLE|5|RemainAmt|decimal|decimal|9|18|4|0|0|0|NULL|NULL|NULL|NULL|NULL
+4 columns|dbo|SimPayAccDoc|USER_TABLE|6|IsCanceled|tinyint|tinyint|1|3|0|0|0|0|NULL|NULL|NULL|((0))|NULL
+4 columns|dbo|SimPayChq|USER_TABLE|1|ChqID|int|int|4|10|0|0|1|0|NULL|1|1|NULL|NULL
+4 columns|dbo|SimPayChq|USER_TABLE|2|VendorID|int|int|4|10|0|1|0|0|NULL|NULL|NULL|NULL|NULL
+4 columns|dbo|SimPayChq|USER_TABLE|3|SimIssueDate|nvarchar|nvarchar|20|0|0|0|0|0|Persian_100_CI_AS|NULL|NULL|NULL|NULL
+4 columns|dbo|SimPayChq|USER_TABLE|4|SimChqNumber|nvarchar|nvarchar|60|0|0|1|0|0|Persian_100_CI_AS|NULL|NULL|NULL|NULL
+4 columns|dbo|SimPayChq|USER_TABLE|5|ChqTp|nvarchar|nvarchar|40|0|0|0|0|0|Persian_100_CI_AS|NULL|NULL|NULL|NULL
+4 columns|dbo|SimPayChq|USER_TABLE|6|ChqState|nvarchar|nvarchar|40|0|0|0|0|0|Persian_100_CI_AS|NULL|NULL|NULL|NULL
+4 columns|dbo|SimPayChq|USER_TABLE|7|ChqAmt|decimal|decimal|9|18|4|0|0|0|NULL|NULL|NULL|NULL|NULL
+4 columns|dbo|SimPayChq|USER_TABLE|8|RemainAmt|decimal|decimal|9|18|4|0|0|0|NULL|NULL|NULL|NULL|NULL
+4 columns|dbo|SimPayChq|USER_TABLE|9|SimClearDate|nvarchar|nvarchar|20|0|0|1|0|0|Persian_100_CI_AS|NULL|NULL|NULL|NULL
+4 columns|dbo|SimPayChq|USER_TABLE|10|IsCanceled|tinyint|tinyint|1|3|0|0|0|0|NULL|NULL|NULL|((0))|NULL
+4 columns|dbo|SimVendorPay|USER_TABLE|1|PayID|int|int|4|10|0|0|1|0|NULL|1|1|NULL|NULL
+4 columns|dbo|SimVendorPay|USER_TABLE|2|VendorID|int|int|4|10|0|1|0|0|NULL|NULL|NULL|NULL|NULL
+4 columns|dbo|SimVendorPay|USER_TABLE|3|SimPayDate|nvarchar|nvarchar|20|0|0|0|0|0|Persian_100_CI_AS|NULL|NULL|NULL|NULL
+4 columns|dbo|SimVendorPay|USER_TABLE|4|SimPayNumber|nvarchar|nvarchar|60|0|0|1|0|0|Persian_100_CI_AS|NULL|NULL|NULL|NULL
+4 columns|dbo|SimVendorPay|USER_TABLE|5|PayTp|nvarchar|nvarchar|40|0|0|0|0|0|Persian_100_CI_AS|NULL|NULL|NULL|NULL
+4 columns|dbo|SimVendorPay|USER_TABLE|6|PayAmt|decimal|decimal|9|18|4|0|0|0|NULL|NULL|NULL|NULL|NULL
+4 columns|dbo|SimVendorPay|USER_TABLE|7|SimChqID|nvarchar|nvarchar|60|0|0|1|0|0|Persian_100_CI_AS|NULL|NULL|NULL|NULL
+4 columns|dbo|SimVendorPay|USER_TABLE|8|IsCanceled|tinyint|tinyint|1|3|0|0|0|0|NULL|NULL|NULL|((0))|NULL
+4 columns|dbo|SimPayAlloc|USER_TABLE|1|AllocID|int|int|4|10|0|0|1|0|NULL|1|1|NULL|NULL
+4 columns|dbo|SimPayAlloc|USER_TABLE|2|SimChqID|nvarchar|nvarchar|60|0|0|0|0|0|Persian_100_CI_AS|NULL|NULL|NULL|NULL
+4 columns|dbo|SimPayAlloc|USER_TABLE|3|VendorID|int|int|4|10|0|0|0|0|NULL|NULL|NULL|NULL|NULL
+4 columns|dbo|SimPayAlloc|USER_TABLE|4|AllocAmt|decimal|decimal|9|18|4|0|0|0|NULL|NULL|NULL|NULL|NULL
 
 section|SchemaName|ObjectName|constraint_name|type_desc|index_type|key_ordinal|column_name|is_descending_key
 -------|----------|----------|---------------|---------|----------|-----------|-----------|-----------------
 5 keys|dbo|SimCustomer|PK_SimCustomer|PRIMARY_KEY_CONSTRAINT|CLUSTERED|1|CustId|0
 5 keys|dbo|SimInvoice|PK_SimInvoice|PRIMARY_KEY_CONSTRAINT|CLUSTERED|1|InvId|0
 5 keys|dbo|SimCheque|PK_SimCheque|PRIMARY_KEY_CONSTRAINT|CLUSTERED|1|ChqId|0
+5 keys|dbo|SimVendor|PK_SimVendor|PRIMARY_KEY_CONSTRAINT|CLUSTERED|1|VendorID|0
+5 keys|dbo|SimPayAccDoc|PK_SimPayAccDoc|PRIMARY_KEY_CONSTRAINT|CLUSTERED|1|PayDocID|0
+5 keys|dbo|SimPayChq|PK_SimPayChq|PRIMARY_KEY_CONSTRAINT|CLUSTERED|1|ChqID|0
+5 keys|dbo|SimVendorPay|PK_SimVendorPay|PRIMARY_KEY_CONSTRAINT|CLUSTERED|1|PayID|0
+5 keys|dbo|SimPayAlloc|PK_SimPayAlloc|PRIMARY_KEY_CONSTRAINT|CLUSTERED|1|AllocID|0
 
 section|fk_name|from_schema|from_table|from_column|to_schema|to_table|to_column|column_ordinal|is_disabled|is_not_trusted|delete_referential_action_desc|update_referential_action_desc
 -------|-------|-----------|----------|-----------|---------|--------|---------|--------------|-----------|--------------|------------------------------|------------------------------
 6 foreign_keys|FK_SimInvoice_Cust|dbo|SimInvoice|CustId|dbo|SimCustomer|CustId|1|0|0|NO_ACTION|NO_ACTION
 6 foreign_keys|FK_SimCheque_Cust|dbo|SimCheque|CustId|dbo|SimCustomer|CustId|1|0|0|NO_ACTION|NO_ACTION
+6 foreign_keys|FK_SimPayAccDoc_Vendor|dbo|SimPayAccDoc|VendorID|dbo|SimVendor|VendorID|1|0|0|NO_ACTION|NO_ACTION
+6 foreign_keys|FK_SimPayChq_Vendor|dbo|SimPayChq|VendorID|dbo|SimVendor|VendorID|1|0|0|NO_ACTION|NO_ACTION
+6 foreign_keys|FK_SimVendorPay_Vendor|dbo|SimVendorPay|VendorID|dbo|SimVendor|VendorID|1|0|0|NO_ACTION|NO_ACTION
+6 foreign_keys|FK_SimPayAlloc_Vendor|dbo|SimPayAlloc|VendorID|dbo|SimVendor|VendorID|1|0|0|NO_ACTION|NO_ACTION

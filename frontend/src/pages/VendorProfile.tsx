@@ -1,11 +1,13 @@
 import { useEffect, useState } from 'react';
 import {
   getPurchasing,
+  getVendorFinancialDetail,
   downloadReportExport,
   type DocumentRow,
   type ReportPrint,
   type ReportTable,
   type VendorProfile as VendorProfileData,
+  type VendorFinancialDetailResponse,
 } from '../services/api';
 import { canonicalPeriod, periodParams, type PageSize, type PeriodValue } from '../hooks/useReportQuery';
 import { DataQualityNotice } from '../components/DataQualityNotice';
@@ -29,6 +31,7 @@ interface VendorProfileProps {
   onBack: () => void;
   showLink?: boolean;
   canExport?: boolean;
+  canSeeFinancials?: boolean;
 }
 
 const documentColumns: ReportColumn<DocumentRow>[] = [
@@ -47,9 +50,10 @@ const documentColumns: ReportColumn<DocumentRow>[] = [
  * with the previous period (both labels), the 12-month trend, top products, returns, and the paged documents whose rows
  * expand to their lines. No balance, payment or credit figure exists here (FR-012).
  */
-export function VendorProfile({ vendor, serverToday, initialPeriod, onBack, showLink, canExport = false }: VendorProfileProps) {
+export function VendorProfile({ vendor, serverToday, initialPeriod, onBack, showLink, canExport = false, canSeeFinancials = false }: VendorProfileProps) {
   const [period, setPeriod] = useState<PeriodValue>(initialPeriod);
   const [profile, setProfile] = useState<VendorProfileData | null>(null);
+  const [financialDetail, setFinancialDetail] = useState<VendorFinancialDetailResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [docPage, setDocPage] = useState(1);
@@ -103,6 +107,28 @@ export function VendorProfile({ vendor, serverToday, initialPeriod, onBack, show
       active = false;
     };
   }, [vendor.key, periodKey]);
+
+  useEffect(() => {
+    if (!canSeeFinancials) {
+      setFinancialDetail(null);
+      return;
+    }
+    let active = true;
+    getVendorFinancialDetail(vendor.key, JSON.parse(periodKey) as Record<string, string>)
+      .then((res) => {
+        if (active) {
+          setFinancialDetail(res);
+        }
+      })
+      .catch(() => {
+        if (active) {
+          setFinancialDetail(null);
+        }
+      });
+    return () => {
+      active = false;
+    };
+  }, [vendor.key, periodKey, canSeeFinancials]);
 
   useEffect(() => {
     let active = true;
@@ -188,6 +214,30 @@ export function VendorProfile({ vendor, serverToday, initialPeriod, onBack, show
         <>
           <ReportStatusLine envelope={profile} />
           <DataQualityNotice notice={profile.dataQuality} showLink={Boolean(showLink)} />
+
+          {canSeeFinancials && (
+            <div className="rounded-xl border border-blue-200 bg-blue-50/50 p-4">
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div>
+                  <h4 className="text-xs font-medium text-blue-900">مانده تأمین‌کننده (دوره انتخابی)</h4>
+                  <p className="mt-1 text-lg font-bold text-gray-900">
+                    {financialDetail?.unavailable.some((u) => u.figure === 'vendorBalance') || financialDetail?.vendorBalance === null
+                      ? 'داده در دسترس نیست'
+                      : faRialFromDecimal(financialDetail?.vendorBalance, { signed: true })}
+                  </p>
+                  <p className="mt-1 text-xs text-gray-500">
+                    آخرین همگام‌سازی: {financialDetail?.lastSuccessfulSync?.atJalali ?? '—'} · مثبت: بدهی شرکت، منفی: بستانکاری
+                  </p>
+                </div>
+                <a
+                  href="#/financials"
+                  className="rounded-lg border border-blue-300 bg-white px-3 py-1.5 text-xs font-semibold text-blue-800 hover:bg-blue-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-600"
+                >
+                  مشاهده در اطلاعات مالی تأمین‌کنندگان ←
+                </a>
+              </div>
+            </div>
+          )}
 
           <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
             <KpiCard label="خالص خرید" value={profile.totals.net ?? null} note={`تعداد اسناد: ${faQty(profile.totals.documentCount ?? null)}`} />

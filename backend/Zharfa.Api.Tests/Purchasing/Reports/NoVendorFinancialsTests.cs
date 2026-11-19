@@ -11,6 +11,7 @@ using Zharfa.Api.Purchasing.Reports;
 /// FR-012: no vendor balance, payment, credit, debt or paid figure exists in any type of the purchasing reports
 /// namespace. The types are found by an assembly scan of the namespace (not a fixed file list), so a DTO added
 /// later is covered automatically.
+/// Note (Phase 6, T045/T065): Financial DTO types live strictly in Zharfa.Api.VendorFinancials, never here.
 /// </summary>
 public class NoVendorFinancialsTests
 {

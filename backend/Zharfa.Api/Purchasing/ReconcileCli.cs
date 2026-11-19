@@ -20,11 +20,24 @@ public static class ReconcileCli
         ArgumentNullException.ThrowIfNull(services);
         ArgumentNullException.ThrowIfNull(args);
 
-        var parsed = ReconcileCommandLine.Parse(args);
+        var isVendorBalance = ReconcileCommandLine.IsVendorBalance(args);
+        var parsed = isVendorBalance
+            ? ReconcileCommandLine.ParseVendorBalance(args)
+            : ReconcileCommandLine.Parse(args);
         if (parsed.Command is null)
         {
             Console.Out.WriteLine(UsageErrorLine(parsed.Error ?? ReconcileCommandLine.Usage));
             return 2;
+        }
+
+        if (isVendorBalance)
+        {
+            // Phase 6 (specs/008-vendor-financials contracts/cli-and-config.md): the vendor-balance command
+            // beside purchasing; `reconcile purchasing` is untouched.
+            var vendorBalance = services.GetRequiredService<VendorBalanceReconciliation>();
+            var vendorReport = await vendorBalance.RunAsync(parsed.Command, cancellationToken);
+            Console.Out.WriteLine(vendorReport.ToJsonLine(parsed.Command.ShowAmounts));
+            return vendorReport.ExitCode;
         }
 
         var service = services.GetRequiredService<PurchasingReconciliation>();

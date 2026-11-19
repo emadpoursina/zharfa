@@ -24,6 +24,12 @@ public static class ReportKeys
     public const string DrillDownLines = "drill-down-lines";
     public const string Generated = "generated";
 
+    // Phase 6: the four financial report keys (specs/008-vendor-financials, data-model §6).
+    public const string VendorFinancials = "vendor-financials";
+    public const string VendorFinancialsDetail = "vendor-financials-detail";
+    public const string VendorFinancialsHistory = "vendor-financials-history";
+    public const string VendorFinancialsOutstanding = "vendor-financials-outstanding";
+
     private static readonly (string Key, string Name)[] Entries =
     [
         (Overview, "نمای کلی خرید"),
@@ -40,9 +46,13 @@ public static class ReportKeys
         (DrillDown, "جزئیات اسناد"),
         (DrillDownLines, "اقلام سند"),
         (Generated, "گزارش تولیدشده"),
+        (VendorFinancials, "اطلاعات مالی تأمین‌کنندگان"),
+        (VendorFinancialsDetail, "نمای مالی تأمین‌کننده"),
+        (VendorFinancialsHistory, "تاریخچهٔ پرداخت‌ها"),
+        (VendorFinancialsOutstanding, "پرداخت‌های معوق"),
     ];
 
-    /// <summary>The thirteen report keys in the data-model order.</summary>
+    /// <summary>The eighteen report keys in the data-model order.</summary>
     public static IReadOnlyList<string> All { get; } = Entries.Select(entry => entry.Key).ToArray();
 
     /// <summary>Persian name of a report key. Unknown keys return the key itself.</summary>

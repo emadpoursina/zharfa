@@ -213,7 +213,7 @@ export function Assistant({ canExport }: AssistantProps) {
                           </td>
                           {result.visual!.table.columns.map((col) => {
                             const val = row[col.id];
-                            const isAmount = col.id === 'net' || col.id === 'gross' || col.id === 'returns' || col.id === 'vat';
+                            const isAmount = col.id === 'net' || col.id === 'gross' || col.id === 'returns' || col.id === 'vat' || col.id === 'vendorBalance' || col.id === 'outstandingPayments';
                             return (
                               <td key={col.id} className="px-4 py-2.5 text-gray-900">
                                 {isAmount && val ? faRialFromDecimal(val) : (val ? toPersianDigits(val) : '—')}

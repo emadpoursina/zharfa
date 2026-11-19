@@ -14,6 +14,7 @@ import { SavedReports } from './pages/SavedReports';
 import { UsersRoles } from './pages/UsersRoles';
 import { VendorComparison } from './pages/VendorComparison';
 import { Vendors, type VendorTarget } from './pages/Vendors';
+import { VendorFinancials } from './pages/VendorFinancials';
 import { Assistant } from './pages/Assistant';
 import { AiSettings } from './pages/AiSettings';
 import { Login } from './pages/Login';
@@ -29,12 +30,13 @@ import {
   type SystemStatus,
 } from './services/api';
 
-type ViewId = 'overview' | 'vendors' | 'reports' | 'compare' | 'assistant' | 'saved' | 'dataSync' | 'users' | 'audit' | 'dataQuality' | 'aiSettings' | 'demo';
+type ViewId = 'overview' | 'vendors' | 'financials' | 'reports' | 'compare' | 'assistant' | 'saved' | 'dataSync' | 'users' | 'audit' | 'dataQuality' | 'aiSettings' | 'demo';
 
 /** Hash route of each view (contracts/api.md §8). */
 const VIEW_HASH: Record<ViewId, string> = {
   overview: '#/overview',
   vendors: '#/vendors',
+  financials: '#/financials',
   reports: '#/reports',
   compare: '#/compare',
   assistant: '#/assistant',
@@ -58,6 +60,7 @@ const VIEW_TABS: ReadonlyArray<{
 }> = [
   { id: 'overview', label: 'نمای کلی خرید', isVisible: (modules) => modules.overview },
   { id: 'vendors', label: 'تأمین‌کنندگان', isVisible: (modules) => modules.purchasingReports },
+  { id: 'financials', label: 'اطلاعات مالی تأمین‌کنندگان', isVisible: (modules) => modules.vendorFinancials },
   { id: 'reports', label: 'گزارش‌های خرید', isVisible: (modules) => modules.purchasingReports },
   { id: 'compare', label: 'مقایسه تأمین‌کنندگان', isVisible: (modules) => modules.purchasingReports },
   { id: 'assistant', label: 'دستیار هوشمند خرید', isVisible: (modules) => modules.ai },
@@ -106,7 +109,9 @@ function renderView(id: ViewId, status: SystemStatus, context: ViewContext) {
     case 'overview':
       return <OverviewPurchasing serverJalaliToday={status.serverJalaliToday} onOpenVendor={context.openVendor} showLink={showLink} />;
     case 'vendors':
-      return <Vendors serverToday={status.serverJalaliToday} target={context.vendorTarget} showLink={showLink} canExport={status.permissions.includes('export')} />;
+      return <Vendors serverToday={status.serverJalaliToday} target={context.vendorTarget} showLink={showLink} canExport={status.permissions.includes('export')} canSeeFinancials={status.modules.vendorFinancials} />;
+    case 'financials':
+      return <VendorFinancials serverToday={status.serverJalaliToday} showLink={showLink} canExport={status.permissions.includes('export')} />;
     case 'reports':
       return <PurchasingReports serverToday={status.serverJalaliToday} showLink={showLink} canExport={status.permissions.includes('export')} />;
     case 'compare':

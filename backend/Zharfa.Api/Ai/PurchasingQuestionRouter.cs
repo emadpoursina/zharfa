@@ -64,7 +64,7 @@ public static class PurchasingQuestionRouter
         return sb.ToString().ToLowerInvariant();
     }
 
-    public static PurchasingQuestionRoute Classify(string question, bool hasSuccessfulSync = true)
+    public static PurchasingQuestionRoute Classify(string question, bool hasSuccessfulSync = true, bool hasVendorFinancials = false)
     {
         var raw = question?.Trim() ?? string.Empty;
         var norm = Normalize(raw);
@@ -91,7 +91,51 @@ public static class PurchasingQuestionRouter
         if (norm.Contains("مانده") || norm.Contains("بدهی") || norm.Contains("پرداخت") ||
             norm.Contains("چک") || norm.Contains("اسناد پرداختنی"))
         {
-            return new PurchasingQuestionRoute("vendor-financials");
+            if (!hasVendorFinancials)
+            {
+                return new PurchasingQuestionRoute("vendor-financials");
+            }
+
+            string financialTool;
+            if ((norm.Contains("خرید") && norm.Contains("پرداخت")) || norm.Contains("خرید در برابر پرداخت") || norm.Contains("خرید منهای پرداخت"))
+            {
+                financialTool = "vendor_purchases_vs_payments";
+            }
+            else if (norm.Contains("بیشترین") || norm.Contains("برتر") || norm.Contains("رتبه") ||
+                     norm.Contains("فهرست") || norm.Contains("لیست") || norm.Contains("جدول") ||
+                     norm.Contains("مقایسه") || norm.Contains("تأمین‌کنندگان") || norm.Contains("تامین کنندگان"))
+            {
+                financialTool = "vendor_financials_list";
+            }
+            else if (norm.Contains("چک") || norm.Contains("معوق") || norm.Contains("اسناد پرداختنی") || norm.Contains("سررسید"))
+            {
+                financialTool = "vendor_outstanding";
+            }
+            else if (norm.Contains("پرداخت"))
+            {
+                financialTool = "vendor_payments";
+            }
+            else if (norm.Contains("مانده") || norm.Contains("بدهی"))
+            {
+                financialTool = "vendor_balance";
+            }
+            else
+            {
+                financialTool = "vendor_financials_list";
+            }
+
+            string financialPeriod = "overview-default";
+            if (norm.Contains("فصل"))
+            {
+                financialPeriod = "current-jalali-quarter";
+            }
+            else if ((norm.Contains("ماه قبل") || norm.Contains("ماه جلالی قبل")) &&
+                     !norm.Contains("نسبت به") && !norm.Contains("تغییر"))
+            {
+                financialPeriod = "previous-jalali-month";
+            }
+
+            return new PurchasingQuestionRoute("vendor-financials", financialTool, financialPeriod);
         }
 
         // 5. Overlay: if no successful sync has completed, in-domain purchasing cannot be answered

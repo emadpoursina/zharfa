@@ -24,6 +24,7 @@ interface VendorsProps {
   target?: VendorTarget | null;
   showLink?: boolean;
   canExport?: boolean;
+  canSeeFinancials?: boolean;
 }
 
 const SORT_KEYS = ['net', 'name', 'code', 'lastPurchase'] as const;
@@ -32,7 +33,7 @@ const SORT_KEYS = ['net', 'name', 'code', 'lastPurchase'] as const;
  * The vendor directory (spec 004 T045, US1): the period, the Persian-tolerant search by name or code, sort and paging,
  * with the previous-period columns when compare is on. A row opens the vendor's profile in place with the current period.
  */
-export function Vendors({ serverToday, target = null, showLink, canExport }: VendorsProps) {
+export function Vendors({ serverToday, target = null, showLink, canExport, canSeeFinancials = false }: VendorsProps) {
   const query = useReportQuery<VendorRow>({
     path: 'vendors',
     declared: ['compare'],
@@ -78,6 +79,7 @@ export function Vendors({ serverToday, target = null, showLink, canExport }: Ven
         onBack={() => setProfile(null)}
         showLink={showLink}
         canExport={canExport}
+        canSeeFinancials={canSeeFinancials}
       />
     );
   }

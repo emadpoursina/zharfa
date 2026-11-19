@@ -153,6 +153,10 @@ class Entity:
         spec = self.data.get("date") or {}
         return spec.get("format", "jalaliText")
 
+    def date_col(self):
+        spec = self.data.get("date") or {}
+        return spec.get("column") if isinstance(spec.get("column"), str) and spec.get("column") else None
+
 
 class Ctx:
     """The map resolved into entities plus the record plan's shared settings."""
@@ -167,6 +171,11 @@ class Ctx:
         self.vendor = Entity("vendor", entities["vendor"]) if "vendor" in entities else None
         self.product = Entity("product", entities["product"]) if "product" in entities else None
         self.category = Entity("productCategory", entities["productCategory"]) if "productCategory" in entities else None
+        # Phase 6 optional financial entities: absent entities only skip the financial records.
+        self.pay_doc = self._optional(entities, "payableDocument")
+        self.pay_chq = self._optional(entities, "payableCheque")
+        self.pay_pay = self._optional(entities, "vendorPayment")
+        self.pay_alloc = self._optional(entities, "paymentAllocation")
         self.database = database
         self.date_text = date_text
         jy, jm, jd = parse_jalali(date_text)
@@ -185,6 +194,24 @@ class Ctx:
             if not entity.col(item):
                 raise MapError(f"required item missing from the map: {name}.{item}")
         return entity
+
+    @staticmethod
+    def _optional(entities, name):
+        if name not in entities:
+            return None
+        entity = Entity(name, entities[name])
+        return entity if entity.obj else None
+
+    def date_literal_for(self, entity, jalali):
+        """The date value in the entity's own date format (defaults to the invoice's format)."""
+        jy, jm, jd = jalali
+        fmt = entity.date_format() if entity is not None else self.inv.date_format()
+        if fmt == "jalaliText":
+            return nstr(f"{jy:04d}/{jm:02d}/{jd:02d}")
+        if fmt == "jalaliInt":
+            return str(jy * 10000 + jm * 100 + jd)
+        gy, gm, gd = jalali_to_gregorian(jy, jm, jd)
+        return nstr(f"{gy:04d}-{gm:02d}-{gd:02d}")
 
     def date_literal(self, jalali):
         """The date value in the map's format for a Jalali (jy, jm, jd) triple."""
@@ -231,6 +258,7 @@ class Plan:
         self.expected = Counter()
         self.skipped = []
         self.nullable_objects = set()
+        self.financial_objects = []  # Phase 6: financial tables the records touched (constraints + revert)
 
     def skip(self, number, issue, reason, obj):
         self.skipped.append((number, issue, reason))
@@ -380,6 +408,49 @@ def product_record(plan, n, key_offset, issue, name_sql, category, support_n):
     return True
 
 
+def financial_record(plan, n, entity, template_var, base_var, issue, sets, note, needs=(), nullable_item=None, guards=()):
+    """One cloned financial row (Phase 6, spec 008): payable document, payable cheque or vendor payment.
+    Guarded at run time by the template row's existence, the column's nullability and any extra SQL guards;
+    a guarded-out record lands in the manifest as 'skipped' so it never counts as seeded."""
+    if entity is None or not entity.obj or not entity.col("key"):
+        plan.skip(n, issue, "entity not in the map", None)
+        return
+    for item in needs:
+        if not entity.col(item):
+            plan.skip(n, issue, f"{entity.name}.{item} is not mapped", entity.obj)
+            return
+    keycol = entity.col("key")
+    conds = [f"{template_var} IS NOT NULL"]
+    if nullable_item:
+        col = entity.col(nullable_item)
+        if not col:
+            plan.skip(n, issue, f"{entity.name}.{nullable_item} is not mapped", entity.obj)
+            return
+        conds.append(
+            f"EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID({nstr(entity.obj)}) "
+            f"AND name = {nstr(col)} AND is_nullable = 1)")
+    conds.extend(guards)
+    body = [
+        f"IF NOT ({' AND '.join(conds)})",
+        f"    INSERT INTO dbo.SimDqSeed (object, key_value, kind, issue_type, note) VALUES ("
+        f"{nstr(entity.obj)}, N'-', N'skipped', {nstr(issue)}, {nstr(f'record {n}: template row or nullable column missing')});",
+        "ELSE",
+        "BEGIN",
+        f"    DECLARE @f{n} bigint = {base_var} + {n};",
+        f"    EXEC #dq_clone {nstr(entity.obj)}, {nstr(keycol)}, {template_var}, CAST(@f{n} AS nvarchar(100));",
+    ]
+    if sets:
+        body.append(f"    UPDATE {qualified(entity.obj)} SET {', '.join(sets)} "
+                    f"WHERE {br(keycol)} = CAST(@f{n} AS nvarchar(100));")
+    body.append(f"    INSERT INTO dbo.SimDqSeed (object, key_value, kind, issue_type, note) VALUES ("
+                f"{nstr(entity.obj)}, CAST(@f{n} AS nvarchar(100)), N'flagged', {nstr(issue)}, {nstr(note)});")
+    body.append("END")
+    plan.add("\n".join(body))
+    plan.expected[issue] += 1
+    if entity.obj not in plan.financial_objects:
+        plan.financial_objects.append(entity.obj)
+
+
 def build_plan(ctx):
     plan = Plan(ctx)
     inv, line, ret, vend, prod, cat = ctx.inv, ctx.line, ctx.ret, ctx.vendor, ctx.product, ctx.category
@@ -462,6 +533,21 @@ def build_plan(ctx):
             f"FROM {qualified(cat.obj)} AS x;")
     header.append(
         "IF @tInv IS NULL OR @tLine IS NULL RAISERROR(N'no template invoice with a line in the source', 16, 1);")
+
+    # Phase 6 (spec 008): template key and new key base per mapped financial entity (skipped entities
+    # only skip their records; the purchase records above must never fail because of them).
+    for ent, tv, bv in ((ctx.pay_doc, "tPayDoc", "kPayDoc"),
+                        (ctx.pay_chq, "tChq", "kChq"),
+                        (ctx.pay_pay, "tPay", "kPay")):
+        if ent is not None and ent.col("key"):
+            kc = ent.col("key")
+            header.append(f"DECLARE @{tv} nvarchar(100), @{bv} bigint;")
+            header.append(
+                f"SELECT TOP (1) @{tv} = CAST(d.{br(kc)} AS nvarchar(100)) FROM {qualified(ent.obj)} AS d "
+                f"ORDER BY d.{br(kc)};")
+            header.append(
+                f"SELECT @{bv} = ISNULL(MAX(TRY_CAST(x.{br(kc)} AS bigint)), 0) + 100000 "
+                f"FROM {qualified(ent.obj)} AS x;")
     plan.add("\n".join(header))
 
     date_sql = plan.ctx.date_literal(plan.ctx.jalali)
@@ -529,6 +615,69 @@ def build_plan(ctx):
     else:
         plan.skip(16, "inconsistent-amounts", "purchaseInvoice.docDiscount is not mapped", inv_obj)
 
+    # Phase 6 (spec 008 T027, FR-031): flagged payable / cheque / payment rows. Admin -> Data quality lists
+    # them after the next sync; the Financials figures keep computing from the same copy (missing vendor rows
+    # simply do not join a vendor). All names come from the map; every record is guarded at run time.
+    pay_doc, pay_chq, pay_pay = ctx.pay_doc, ctx.pay_chq, ctx.pay_pay
+    vendor_master = vend is not None and vend.obj and vend.col("key")
+
+    financial_record(
+        plan, 17, pay_doc, "@tPayDoc", "@kPayDoc", "missing-values",
+        [f"{br(pay_doc.col('vendorKey'))} = NULL"] if pay_doc and pay_doc.col("vendorKey") else [],
+        "payable document without a vendor",
+        needs=["vendorKey"], nullable_item="vendorKey")
+    if vendor_master and pay_chq is not None and pay_chq.col("vendorKey"):
+        financial_record(
+            plan, 18, pay_chq, "@tChq", "@kChq", "broken-relationships",
+            [f"{br(pay_chq.col('vendorKey'))} = @noVendor"],
+            "payable cheque pointing at no vendor master",
+            needs=["vendorKey"])
+    else:
+        plan.skip(18, "broken-relationships", "vendor master or payableCheque.vendorKey is not mapped",
+                  pay_chq.obj if pay_chq else None)
+    financial_record(
+        plan, 19, pay_doc, "@tPayDoc", "@kPayDoc", "invalid-dates",
+        [f"{br(pay_doc.col('date'))} = {ctx.date_literal_for(pay_doc, (1499, 1, 1))}"] if pay_doc and pay_doc.col("date") else [],
+        "payable document dated far in the future",
+        needs=["date"])
+    financial_record(
+        plan, 20, pay_chq, "@tChq", "@kChq", "invalid-dates",
+        [f"{br(pay_chq.col('date'))} = {ctx.date_literal_for(pay_chq, (1350, 1, 1))}"] if pay_chq and pay_chq.col("date") else [],
+        "payable cheque dated before the earliest plausible date",
+        needs=["date"])
+    financial_record(
+        plan, 21, pay_pay, "@tPay", "@kPay", "invalid-dates",
+        [f"{br(pay_pay.col('date'))} = {ctx.date_literal_for(pay_pay, (1499, 1, 1))}"] if pay_pay and pay_pay.col("date") else [],
+        "vendor payment dated far in the future",
+        needs=["date"])
+    if pay_chq is not None and pay_chq.col("amount") and pay_chq.col("remainingAmount"):
+        financial_record(
+            plan, 22, pay_chq, "@tChq", "@kChq", "inconsistent-amounts",
+            [f"{br(pay_chq.col('amount'))} = 5000000",
+             f"{br(pay_chq.col('remainingAmount'))} = 6000000"],
+            "payable cheque remaining above its face amount",
+            needs=["amount", "remainingAmount"])
+    else:
+        plan.skip(22, "inconsistent-amounts", "payableCheque.amount or remainingAmount is not mapped",
+                  pay_chq.obj if pay_chq else None)
+    if pay_pay is not None and pay_pay.col("number") and pay_pay.col("vendorKey"):
+        # The clone repeats the template payment's (vendor, reference): DU2 keeps the template and flags the
+        # clone. Guarded so a template with an empty reference or no vendor is skipped, not miscounted.
+        pay_tbl = qualified(pay_pay.obj)
+        pay_key = pay_pay.col("key")
+        pay_ref = pay_pay.col("number")
+        pay_vendor = pay_pay.col("vendorKey")
+        financial_record(
+            plan, 23, pay_pay, "@tPay", "@kPay", "duplicate-records",
+            [], "duplicate payment reference for the same vendor",
+            needs=["number", "vendorKey"],
+            guards=[f"EXISTS (SELECT 1 FROM {pay_tbl} AS tp WHERE tp.{br(pay_key)} = @tPay "
+                    f"AND NULLIF(LTRIM(RTRIM(ISNULL(CAST(tp.{br(pay_ref)} AS nvarchar(200)), N''))), N'') IS NOT NULL "
+                    f"AND tp.{br(pay_vendor)} IS NOT NULL)"])
+    else:
+        plan.skip(23, "duplicate-records", "vendorPayment.number or vendorPayment.vendorKey is not mapped",
+                  pay_pay.obj if pay_pay else None)
+
     return plan
 
 
@@ -594,6 +743,9 @@ def render_apply(ctx, plan, source_name):
     for obj in [ctx.inv.obj, ctx.line.obj] + ([ctx.ret.obj] if ctx.ret else []):
         if obj not in objects:
             objects.append(obj)
+    for obj in plan.financial_objects:
+        if obj not in objects:
+            objects.append(obj)
     for obj in objects:
         lines.append(f"ALTER TABLE {qualified(obj)} NOCHECK CONSTRAINT ALL;")
     lines.append("-- Steps 5-6: templates, keys and the records (kind flagged = expected count, support = supporting rows).")
@@ -616,7 +768,7 @@ def plan_text(plan):
     return "\n".join(plan.body)
 
 
-def render_revert(ctx):
+def render_revert(ctx, plan=None):
     lines = [
         "-- dq-revert.sql: removes every row seeded by dq-apply.sql and drops dbo.SimDqSeed (spec 005, FR-030, US4).",
         "-- Run against the simulator only, by hand:  sqlcmd -b -S 127.0.0.1,14330 -U sa -i dq-revert.sql",
@@ -636,9 +788,13 @@ def render_revert(ctx):
     for entity in [ctx.product]:
         if entity is not None and entity.col("key"):
             order.append(entity)
+    if plan is not None:
+        for entity in (ctx.pay_doc, ctx.pay_chq, ctx.pay_pay, ctx.pay_alloc):
+            if entity is not None and entity.obj in plan.financial_objects:
+                order.append(entity)
     seen = set()
     for entity in order:
-        if entity.obj in seen:
+        if entity.obj in seen or entity is None or not entity.col("key"):
             continue
         seen.add(entity.obj)
         key = entity.col("key")
@@ -684,7 +840,7 @@ def main(argv=None):
     with open(apply_path, "w", encoding="utf-8", newline="\n") as handle:
         handle.write(render_apply(ctx, plan, os.path.basename(args.map)))
     with open(revert_path, "w", encoding="utf-8", newline="\n") as handle:
-        handle.write(render_revert(ctx))
+        handle.write(render_revert(ctx, plan))
 
     print(f"wrote {apply_path}")
     print(f"wrote {revert_path}")
