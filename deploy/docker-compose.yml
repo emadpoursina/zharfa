@@ -42,6 +42,13 @@ services:
       AiProvider__Endpoint: ${AI_PROVIDER_ENDPOINT:-}
       AiProvider__Model: ${AI_PROVIDER_MODEL:-}
       AiProvider__ApiKey: ${AI_PROVIDER_API_KEY:-}
+      # Flow E Development capture: compose must include deploy/docker-compose.9router.yml;
+      # probe http://shared_9router:20128/v1 from the api container before enable+chat.
+      AiProvider__CapturePath: ${AiProvider__CapturePath:-}
+      # Local AI provider (Phase 4); values come from deploy/.env only.
+      LocalAi__Name: ${LOCAL_AI_NAME:-ollama}
+      LocalAi__Endpoint: ${LOCAL_AI_ENDPOINT:-}
+      LocalAi__Model: ${LOCAL_AI_MODEL:-}
       Inventory__LowStockThreshold: ${INVENTORY_LOW_STOCK_THRESHOLD:-10}
       # Mabna read-only source (spec 002/003). Unset = connector and sync stay disabled; the API still starts.
       # Values come from deploy/.env only. The file paths are container paths under the read-only mount below.

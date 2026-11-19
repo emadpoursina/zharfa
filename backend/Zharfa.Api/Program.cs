@@ -143,24 +143,36 @@ builder.Services.AddScoped<Zharfa.Api.Audit.AuditLogService>();
 builder.Services.AddScoped<Zharfa.Api.DataQuality.DataQualityService>();
 builder.Services.AddScoped<Zharfa.Api.DataQuality.DataQualityNoticeService>();
 
-builder.Services.AddHttpClient("ai", client =>
-{
-    client.Timeout = TimeSpan.FromSeconds(30);
-});
+var capturePath = ConfigurationKeys.Get(builder.Configuration, "AiProvider__CapturePath")
+    ?? builder.Configuration["AiProvider:CapturePath"]
+    ?? builder.Configuration["AiProvider__CapturePath"];
 
-builder.Services.AddScoped<AnalystTools>();
+if (builder.Environment.IsDevelopment() && !string.IsNullOrWhiteSpace(capturePath))
+{
+    builder.Services.AddTransient<CloudRequestCaptureHandler>();
+    builder.Services.AddHttpClient("ai", client =>
+    {
+        client.Timeout = TimeSpan.FromSeconds(30);
+    }).AddHttpMessageHandler<CloudRequestCaptureHandler>();
+}
+else
+{
+    builder.Services.AddHttpClient("ai", client =>
+    {
+        client.Timeout = TimeSpan.FromSeconds(30);
+    });
+}
+
+builder.Services.AddSingleton<OpenAiCompatibleChatClient>();
+builder.Services.AddSingleton<AiQuestionGate>();
+builder.Services.AddScoped<AiProviderSettings>();
+builder.Services.AddScoped<IAiProviderSettings>(sp => sp.GetRequiredService<AiProviderSettings>());
 builder.Services.AddScoped<OllamaAiProvider>();
 builder.Services.AddScoped<CloudAiProvider>();
-builder.Services.AddScoped<IAiProvider>(sp =>
-{
-    var config = sp.GetRequiredService<IConfiguration>();
-    var providerName = config["AiProvider:Name"] ?? config["AiProvider__Name"] ?? string.Empty;
-    if (string.Equals(providerName.Trim(), "ollama", StringComparison.OrdinalIgnoreCase))
-    {
-        return sp.GetRequiredService<OllamaAiProvider>();
-    }
-    return sp.GetRequiredService<CloudAiProvider>();
-});
+builder.Services.AddScoped<ActiveAiProvider>();
+builder.Services.AddScoped<IAiProvider>(sp => sp.GetRequiredService<ActiveAiProvider>());
+builder.Services.AddScoped<AnalystTools>();
+builder.Services.AddScoped<PurchasingAnalystTools>();
 
 builder.Services.AddAuthentication(CookieAuthenticationDefaults.AuthenticationScheme)
     .AddCookie(options =>

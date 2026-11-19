@@ -2,15 +2,15 @@
 #
 # `validation_commands` are run by the tester state for managed work. The
 # worker never runs them. Commands below prove the frontend builds, the API and
-# desktop shell compile, and the backend unit suites (specs 002, 003, 004 and 005) pass.
+# desktop shell compile, and the backend unit suites (specs 002, 003, 004, 005 and 006) pass.
 # Spec 004 adds the unit suites under backend/Zharfa.Api.Tests/Purchasing/Reports/
 # (period, trend window, catalog, filters, print limit) and the purchasing
 # sync/mapping suites. Spec 005 adds the unit suites under Security/*, Audit/*,
-# DataQuality/* and updated Platform/*; `dotnet test` below runs them with the rest.
-# The Docker stack and the Mabna simulator are exercised by the tester's
-# quickstart flows (specs/003-real-purchase-data/quickstart.md,
-# specs/004-vendor-purchasing-reports/quickstart.md and
-# specs/005-permissions-audit-quality/quickstart.md), not here.
+# DataQuality/* and updated Platform/*. Spec 006 adds the unit suites under
+# backend/Zharfa.Api.Tests/Ai/* (allowlist, period default, payload scrub, flag, gate).
+# The Docker stack, Mabna simulator, and HTTP/UI proof are exercised by the tester's
+# quickstart flows (specs/006-local-ai-purchasing/quickstart.md), not here. Do not add
+# GPU or Ollama to validation_commands.
 
 validation_commands:
   # Frontend (React + TypeScript + Vite): install deps, then a production build.

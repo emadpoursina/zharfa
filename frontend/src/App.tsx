@@ -13,6 +13,8 @@ import { PurchasingReports } from './pages/PurchasingReports';
 import { UsersRoles } from './pages/UsersRoles';
 import { VendorComparison } from './pages/VendorComparison';
 import { Vendors, type VendorTarget } from './pages/Vendors';
+import { Assistant } from './pages/Assistant';
+import { AiSettings } from './pages/AiSettings';
 import { Login } from './pages/Login';
 import {
   FORBIDDEN_EVENT,
@@ -26,7 +28,7 @@ import {
   type SystemStatus,
 } from './services/api';
 
-type ViewId = 'overview' | 'vendors' | 'reports' | 'compare' | 'dataSync' | 'users' | 'audit' | 'dataQuality' | 'demo';
+type ViewId = 'overview' | 'vendors' | 'reports' | 'compare' | 'assistant' | 'dataSync' | 'users' | 'audit' | 'dataQuality' | 'aiSettings' | 'demo';
 
 /** Hash route of each view (contracts/api.md §8). */
 const VIEW_HASH: Record<ViewId, string> = {
@@ -34,10 +36,12 @@ const VIEW_HASH: Record<ViewId, string> = {
   vendors: '#/vendors',
   reports: '#/reports',
   compare: '#/compare',
+  assistant: '#/assistant',
   dataSync: '#/settings/sync',
   users: '#/settings/users',
   audit: '#/settings/audit',
   dataQuality: '#/settings/data-quality',
+  aiSettings: '#/settings/ai',
   demo: '#/demo',
 };
 
@@ -54,10 +58,12 @@ const VIEW_TABS: ReadonlyArray<{
   { id: 'vendors', label: 'تأمین‌کنندگان', isVisible: (modules) => modules.purchasingReports },
   { id: 'reports', label: 'گزارش‌های خرید', isVisible: (modules) => modules.purchasingReports },
   { id: 'compare', label: 'مقایسه تأمین‌کنندگان', isVisible: (modules) => modules.purchasingReports },
+  { id: 'assistant', label: 'دستیار هوشمند خرید', isVisible: (modules) => modules.ai },
   { id: 'dataSync', label: 'تنظیمات ← همگام‌سازی داده', isVisible: (modules) => modules.dataSync },
   { id: 'users', label: 'تنظیمات ← کاربران و نقش‌ها', isVisible: (modules) => modules.users },
   { id: 'audit', label: 'تنظیمات ← گزارش رویدادها', isVisible: (modules) => modules.auditLog },
   { id: 'dataQuality', label: 'تنظیمات ← کیفیت داده', isVisible: (modules) => modules.dataQuality },
+  { id: 'aiSettings', label: 'تنظیمات ← هوش مصنوعی', isVisible: (modules) => modules.aiSettings },
   { id: 'demo', label: 'صفحات نمایشی', isVisible: (modules) => modules.demoPages },
 ];
 
@@ -102,6 +108,8 @@ function renderView(id: ViewId, status: SystemStatus, context: ViewContext) {
       return <PurchasingReports serverToday={status.serverJalaliToday} showLink={showLink} />;
     case 'compare':
       return <VendorComparison serverToday={status.serverJalaliToday} showLink={showLink} />;
+    case 'assistant':
+      return <Assistant />;
     case 'dataSync':
       return <DataSync />;
     case 'users':
@@ -110,9 +118,11 @@ function renderView(id: ViewId, status: SystemStatus, context: ViewContext) {
       return <AuditLog />;
     case 'dataQuality':
       return <DataQuality focusTypes={context.dataQualityTypes} />;
+    case 'aiSettings':
+      return <AiSettings />;
     case 'demo':
-      // The AI agent is a separate module: hidden in production until Phase 4 (modules.ai).
-      return <Dashboard aiEnabled={status.modules.ai} />;
+      // Demo 1 AI chat is shown only on demo pages (research R7).
+      return <Dashboard demoChatEnabled={status.modules.demoPages} />;
   }
 }
 

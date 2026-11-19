@@ -1,30 +1,61 @@
-// ============================================================================
-// OllamaAiProvider — Unimplemented seam for Zharfa Demo 1.
-// Locked single-path decision: Demo 1 never implements Ollama (PRD §6 / research.md).
-// IsConfigured is always false, and CompleteAsync always throws NotSupportedException.
-// The controller's unavailable path handles it (HTTP 503), proving the seam works
-// without any Ollama implementation.
-// ============================================================================
-
 namespace Zharfa.Api.Ai;
 
 using System;
 using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
+using Microsoft.Extensions.Configuration;
 
+/// <summary>
+/// Local AI provider implementation using OpenAI-compatible protocol (e.g. Ollama /v1).
+/// Configured via LocalAi__* environment settings. No local API key required.
+/// </summary>
 public class OllamaAiProvider : IAiProvider
 {
-    public bool IsConfigured => false;
+    private readonly OpenAiCompatibleChatClient _chatClient;
+    private readonly string _name;
+    private readonly string _endpoint;
+    private readonly string _model;
+
+    public OllamaAiProvider(
+        OpenAiCompatibleChatClient chatClient,
+        IConfiguration configuration)
+    {
+        _chatClient = chatClient;
+
+        var configuredName = configuration["LocalAi:Name"] ?? configuration["LocalAi__Name"];
+        _name = string.IsNullOrWhiteSpace(configuredName) ? "ollama" : configuredName.Trim();
+        _endpoint = configuration["LocalAi:Endpoint"] ?? configuration["LocalAi__Endpoint"] ?? string.Empty;
+        _model = configuration["LocalAi:Model"] ?? configuration["LocalAi__Model"] ?? string.Empty;
+    }
+
+    public bool IsConfigured =>
+        !string.IsNullOrWhiteSpace(_endpoint) &&
+        !string.IsNullOrWhiteSpace(_model);
 
     public ProviderStatus GetStatus() =>
-        new ProviderStatus("ollama", string.Empty, string.Empty, false);
+        new ProviderStatus(_name, OpenAiCompatibleChatClient.RedactEndpoint(_endpoint), _model, IsConfigured);
 
-    public Task<AiTurn> CompleteAsync(
+    public async Task<AiTurn> CompleteAsync(
         IReadOnlyList<AiMessage> messages,
         IReadOnlyList<AiToolSpec> tools,
         CancellationToken ct)
     {
-        throw new NotSupportedException("ارائه‌دهنده محلی Ollama در نسخه نمایشی ۱ پشتیبانی نمی‌شود.");
+        if (!IsConfigured)
+        {
+            throw new AiException("سرویس هوش مصنوعی محلی پیکربندی نشده است.");
+        }
+
+        return await _chatClient.CompleteAsync(_endpoint, _model, apiKey: null, messages, tools, ct);
+    }
+
+    public async Task ProbeLivenessAsync(CancellationToken ct)
+    {
+        if (!IsConfigured)
+        {
+            throw new AiException("سرویس هوش مصنوعی محلی پیکربندی نشده است.");
+        }
+
+        await _chatClient.ProbeLivenessAsync(_endpoint, _model, apiKey: null, ct);
     }
 }

@@ -16,6 +16,7 @@ public class AuditActionsTests
         "user.unlocked", "report.opened", "report.printed", "access.denied", "audit.viewed",
         "data_quality.viewed", "sync.requested", "sync.rejected", "provider.status.viewed",
         "reconciliation.run", "reconciliation.mismatch", "settings.ai_provider.changed",
+        "ai.question",
     ];
 
     private static readonly string[] ExpectedReportKeys =
@@ -29,8 +30,9 @@ public class AuditActionsTests
     {
         var codes = AuditActions.All.Select(entry => entry.Code).ToArray();
 
-        Assert.Equal(22, codes.Length);
+        Assert.Equal(23, codes.Length);
         Assert.Equal(ExpectedCodes.OrderBy(code => code), codes.OrderBy(code => code));
+        Assert.Equal("پرسش از دستیار هوشمند", AuditActions.Label("ai.question"));
     }
 
     [Fact]

@@ -124,7 +124,7 @@ export function AiChat({ from, to, jalaliLabel, categoryId, categories }: AiChat
     const fallbackCategoryLabel = resolveCategoryLabel(categoryId, categories);
 
     try {
-      const res = await apiPost<AiChatResponse>('/api/ai/chat', {
+      const res = await apiPost<AiChatResponse>('/api/ai/demo/chat', {
         question: trimmed,
         from,
         to,

@@ -28,11 +28,11 @@ interface CategoriesResponse {
 }
 
 interface DashboardProps {
-  /** `modules.ai` from GET /api/system/status: false in production until Phase 4. */
-  aiEnabled: boolean;
+  /** Demo 1 AI chat is shown only on demo pages (research R7), never from modules.ai. */
+  demoChatEnabled?: boolean;
 }
 
-export function Dashboard({ aiEnabled }: DashboardProps) {
+export function Dashboard({ demoChatEnabled = false }: DashboardProps) {
   const [activePreset, setActivePreset] = useState<PeriodPreset>('current');
   const [range, setRange] = useState<{ from: string; to: string }>(() =>
     currentJalaliMonthToDate()
@@ -384,8 +384,8 @@ export function Dashboard({ aiEnabled }: DashboardProps) {
           prevJalaliLabel={overview?.period.prev.jalaliLabel}
         />
 
-        {/* AI Business Analyst (T023 / US4): hidden unless the server enables the AI module (T072) */}
-        {aiEnabled && (
+        {/* AI Business Analyst (Demo 1 demo chat): shown only on demo pages */}
+        {demoChatEnabled && (
           <AiChat
             from={range.from}
             to={range.to}
