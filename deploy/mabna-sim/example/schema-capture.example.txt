@@ -12,14 +12,14 @@ section|SchemaName|ObjectName|type_desc|ordinal|column_name|type_name|base_type|
 4 columns|dbo|SimInvoice|USER_TABLE|3|InvDateText|nvarchar|nvarchar|20|0|0|1|0|0|Persian_100_CI_AS|NULL|NULL|NULL|NULL
 4 columns|dbo|SimInvoice|USER_TABLE|4|InvDateNum|int|int|4|10|0|1|0|0|NULL|NULL|NULL|NULL|NULL
 4 columns|dbo|SimInvoice|USER_TABLE|5|InvStatus|tinyint|tinyint|1|3|0|0|0|0|NULL|NULL|NULL|((0))|NULL
-4 columns|dbo|SimInvoice|USER_TABLE|6|Amount|decimal|decimal|9|18|0|0|0|0|NULL|NULL|NULL|NULL|NULL
+4 columns|dbo|SimInvoice|USER_TABLE|6|SimAmount|decimal|decimal|9|18|0|0|0|0|NULL|NULL|NULL|NULL|NULL
 4 columns|dbo|SimInvoice|USER_TABLE|7|Note|nvarchar|nvarchar|-1|0|0|1|0|0|Persian_100_CI_AS|NULL|NULL|NULL|NULL
 4 columns|dbo|SimCheque|USER_TABLE|1|ChqId|int|int|4|10|0|0|1|0|NULL|1|1|NULL|NULL
 4 columns|dbo|SimCheque|USER_TABLE|2|CustId|int|int|4|10|0|0|0|0|NULL|NULL|NULL|NULL|NULL
 4 columns|dbo|SimCheque|USER_TABLE|3|DueDateText|nvarchar|nvarchar|20|0|0|1|0|0|Persian_100_CI_AS|NULL|NULL|NULL|NULL
 4 columns|dbo|SimCheque|USER_TABLE|4|DueDateNum|int|int|4|10|0|1|0|0|NULL|NULL|NULL|NULL|NULL
 4 columns|dbo|SimCheque|USER_TABLE|5|ChqState|tinyint|tinyint|1|3|0|0|0|0|NULL|NULL|NULL|NULL|NULL
-4 columns|dbo|SimCheque|USER_TABLE|6|Amount|decimal|decimal|9|18|0|0|0|0|NULL|NULL|NULL|NULL|NULL
+4 columns|dbo|SimCheque|USER_TABLE|6|SimAmount|decimal|decimal|9|18|0|0|0|0|NULL|NULL|NULL|NULL|NULL
 4 columns|dbo|SimCheque|USER_TABLE|7|Note|nvarchar|nvarchar|200|0|0|1|0|0|Persian_100_CI_AS|NULL|NULL|NULL|NULL
 4 columns|dbo|SimVendor|USER_TABLE|1|VendorID|int|int|4|10|0|0|1|0|NULL|1|1|NULL|NULL
 4 columns|dbo|SimVendor|USER_TABLE|2|VendorName|nvarchar|nvarchar|120|0|0|0|0|0|Persian_100_CI_AS|NULL|NULL|NULL|NULL

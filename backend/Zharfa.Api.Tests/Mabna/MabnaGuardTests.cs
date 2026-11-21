@@ -82,13 +82,13 @@ public class MabnaSqlBuilderTests
     {
         var cmd = MabnaSqlBuilder.Build(Ledger, new MabnaQuery(
             "ExampleLedger",
-            new[] { "Id", "Amount" },
-            new[] { new MabnaFilter("Amount", MabnaFilterOp.Ge, 10), new MabnaFilter("Note", MabnaFilterOp.IsNull) },
+            new[] { "Id", "SimAmount" },
+            new[] { new MabnaFilter("SimAmount", MabnaFilterOp.Ge, 10), new MabnaFilter("Note", MabnaFilterOp.IsNull) },
             new[] { new MabnaOrder("Id", Descending: true) },
             Top: 50), maxRows: 1000);
 
         Assert.Equal(
-            "SELECT TOP (51) [Id], [Amount] FROM [dbo].[ExampleLedger] WHERE [Amount] >= @p0 AND [Note] IS NULL ORDER BY [Id] DESC",
+            "SELECT TOP (51) [Id], [SimAmount] FROM [dbo].[ExampleLedger] WHERE [SimAmount] >= @p0 AND [Note] IS NULL ORDER BY [Id] DESC",
             cmd.Sql);
         Assert.Single(cmd.Parameters);
         Assert.Equal(50, cmd.RowLimit);
@@ -113,7 +113,7 @@ public class MabnaSqlBuilderTests
 
     [Theory]
     [InlineData("*")]
-    [InlineData("Id, Amount")]
+    [InlineData("Id, SimAmount")]
     [InlineData("Id]; DELETE FROM x; --")]
     [InlineData("COUNT(*)")]
     public void Unsafe_column_names_are_refused(string column)
