@@ -20,6 +20,9 @@ cp deploy/.env.example deploy/.env       # Windows: copy deploy\.env.example dep
 | API logs | `./deploy/zharfa.sh logs` | `.\deploy\zharfa.ps1 logs` |
 | Delete database (asks first) | `./deploy/zharfa.sh reset` | `.\deploy\zharfa.ps1 reset` |
 
+From the repository root, `make up` and `make down` run the same helper
+(`make up` = `./deploy/zharfa.sh up`, `make down` = `./deploy/zharfa.sh down`).
+
 If PowerShell blocks the script, run it once as
 `powershell -ExecutionPolicy Bypass -File .\deploy\zharfa.ps1 up`.
 

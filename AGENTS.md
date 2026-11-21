@@ -102,6 +102,8 @@ dotnet build backend/Zharfa.Api/Zharfa.Api.csproj                 # backend comp
 dotnet build desktop/Zharfa.Desktop/Zharfa.Desktop.csproj         # desktop shell compile (any OS)
 docker compose -f deploy/docker-compose.yml up --build -d         # db + api + web/proxy
 docker compose -f deploy/docker-compose.mabna-sim.yml up -d       # Mabna simulator, synthetic data (deploy/mabna-sim/README.md)
+make up                                                           # same as ./deploy/zharfa.sh up (docker stack, background)
+make down                                                         # same as ./deploy/zharfa.sh down (stops, keeps data)
 dotnet test backend/Zharfa.Api.Tests                              # backend unit tests (no DB or network)
 ```
 
