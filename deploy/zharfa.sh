@@ -26,27 +26,40 @@ require_env() {
   fi
 }
 
+# Compose interpolates every service before running any subcommand, so the
+# required app-level variables must resolve even for down/status/reset. Those
+# commands never create containers, so fill in placeholders when the values are
+# unset: stopping or inspecting the stack must not depend on a complete .env.
+stop_env() {
+  export ZHARFA_DATA_MODE="${ZHARFA_DATA_MODE:-demo}"
+  export POSTGRES_PASSWORD="${POSTGRES_PASSWORD:-unused-by-down}"
+}
+
 case "${1:-up}" in
   up)
     require_env
     compose up --build -d
+    port="$(sed -n 's/^ZHARFA_PORT=//p' deploy/.env | tail -n 1 | tr -d '\r')"
     echo ""
-    echo "Zharfa is starting. Open http://localhost:8080 (or the ZHARFA_PORT in deploy/.env)."
+    echo "Zharfa is starting. Open http://localhost:${port:-8080}"
     ;;
   restart)
     require_env
     compose up --build -d --force-recreate
     ;;
   down)
+    stop_env
     compose down
     ;;
   status)
+    stop_env
     compose ps
     ;;
   logs)
     compose logs -f api
     ;;
   reset)
+    stop_env
     read -r -p "This deletes the Zharfa database volume. Type 'yes' to continue: " answer
     if [ "$answer" = "yes" ]; then
       compose down -v

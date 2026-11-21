@@ -23,6 +23,11 @@ cp deploy/.env.example deploy/.env       # Windows: copy deploy\.env.example dep
 From the repository root, `make up` and `make down` run the same helper
 (`make up` = `./deploy/zharfa.sh up`, `make down` = `./deploy/zharfa.sh down`).
 
+`down`, `status` and `reset` keep working even when `deploy/.env` is incomplete
+(for example `ZHARFA_DATA_MODE` not yet set): they never start containers, so
+the helper supplies placeholders. `up` still requires a complete `deploy/.env`
+and fails loudly when a required value is missing.
+
 If PowerShell blocks the script, run it once as
 `powershell -ExecutionPolicy Bypass -File .\deploy\zharfa.ps1 up`.
 
